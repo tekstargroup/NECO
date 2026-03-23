@@ -1,0 +1,195 @@
+{
+  "hts_version_id": "None",
+  "dry_run": false,
+  "parents_considered": 17498,
+  "parents_updated": {
+    "level_6": {
+      "general": 0,
+      "special": 0,
+      "col2": 0
+    },
+    "level_8": {
+      "general": 490,
+      "special": 260,
+      "col2": 539
+    }
+  },
+  "conflicts_detected": 0,
+  "parents_skipped_low_coverage": 7713,
+  "parents_skipped_existing_value": 0,
+  "updated_parents": [
+    {
+      "parent_code": "0511.99.40",
+      "parent_level": 8,
+      "field": "duty_general_raw",
+      "value": "1.1%",
+      "coverage": 0.8333333333333334,
+      "non_null_count": 5,
+      "total_children": 6,
+      "example_children": [
+        "0511994024",
+        "0511994028"
+      ]
+    },
+    {
+      "parent_code": "0601.10.90",
+      "parent_level": 8,
+      "field": "duty_general_raw",
+      "value": "3.5%",
+      "coverage": 0.8,
+      "non_null_count": 4,
+      "total_children": 5,
+      "example_children": [
+        "0601109020",
+        "0601109040"
+      ]
+    },
+    {
+      "parent_code": "0601.10.90",
+      "parent_level": 8,
+      "field": "duty_column2_raw",
+      "value": "30%",
+      "coverage": 0.8,
+      "non_null_count": 4,
+      "total_children": 5,
+      "example_children": [
+        "0601109020",
+        "0601109040"
+      ]
+    },
+    {
+      "parent_code": "0603.19.01",
+      "parent_level": 8,
+      "field": "duty_general_raw",
+      "value": "6.4%",
+      "coverage": 0.8518518518518519,
+      "non_null_count": 23,
+      "total_children": 27,
+      "example_children": [
+        "0603190105",
+        "0603190107"
+      ]
+    },
+    {
+      "parent_code": "0603.19.01",
+      "parent_level": 8,
+      "field": "duty_column2_raw",
+      "value": "40%",
+      "coverage": 0.8518518518518519,
+      "non_null_count": 23,
+      "total_children": 27,
+      "example_children": [
+        "0603190105",
+        "0603190107"
+      ]
+    },
+    {
+      "parent_code": "0702.00.20",
+      "parent_level": 8,
+      "field": "duty_special_raw",
+      "value": "Free",
+      "coverage": 0.8421052631578947,
+      "non_null_count": 16,
+      "total_children": 19,
+      "example_children": [
+        "0702002002",
+        "0702002004"
+      ]
+    },
+    {
+      "parent_code": "0702.00.40",
+      "parent_level": 8,
+      "field": "duty_special_raw",
+      "value": "Free",
+      "coverage": 0.8125,
+      "non_null_count": 13,
+      "total_children": 16,
+      "example_children": [
+        "0702004002",
+        "0702004004"
+      ]
+    },
+    {
+      "parent_code": "0707.00.50",
+      "parent_level": 8,
+      "field": "duty_special_raw",
+      "value": "Free",
+      "coverage": 0.9,
+      "non_null_count": 9,
+      "total_children": 10,
+      "example_children": [
+        "0707005005",
+        "0707005022"
+      ]
+    },
+    {
+      "parent_code": "0710.80.97",
+      "parent_level": 8,
+      "field": "duty_general_raw",
+      "value": "14.9%",
+      "coverage": 0.875,
+      "non_null_count": 7,
+      "total_children": 8,
+      "example_children": [
+        "0710809710",
+        "0710809722"
+      ]
+    },
+    {
+      "parent_code": "0710.80.97",
+      "parent_level": 8,
+      "field": "duty_column2_raw",
+      "value": "35%",
+      "coverage": 0.875,
+      "non_null_count": 7,
+      "total_children": 8,
+      "example_children": [
+        "0710809710",
+        "0710809722"
+      ]
+    }
+  ],
+  "conflict_examples": [],
+  "low_coverage_examples": [
+    {
+      "parent_code": "0101.29.00",
+      "parent_level": 8,
+      "field": "duty_column2_raw",
+      "reason": "Too few non-null children (2 < 3)",
+      "coverage": 0.6666666666666666,
+      "non_null_count": 2
+    },
+    {
+      "parent_code": "0106.11.00",
+      "parent_level": 8,
+      "field": "duty_column2_raw",
+      "reason": "Too few non-null children (1 < 3)",
+      "coverage": 1.0,
+      "non_null_count": 1
+    },
+    {
+      "parent_code": "0106.14.00",
+      "parent_level": 8,
+      "field": "duty_column2_raw",
+      "reason": "Too few non-null children (1 < 3)",
+      "coverage": 1.0,
+      "non_null_count": 1
+    },
+    {
+      "parent_code": "0106.19.91",
+      "parent_level": 8,
+      "field": "duty_column2_raw",
+      "reason": "Too few non-null children (2 < 3)",
+      "coverage": 0.6666666666666666,
+      "non_null_count": 2
+    },
+    {
+      "parent_code": "0106.31.00",
+      "parent_level": 8,
+      "field": "duty_general_raw",
+      "reason": "Too few non-null children (1 < 3)",
+      "coverage": 1.0,
+      "non_null_count": 1
+    }
+  ]
+}

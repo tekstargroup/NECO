@@ -1,0 +1,252 @@
+[
+  {
+    "hts_code": "6112.20.10.10",
+    "resolved": {
+      "hts_code": "6112201010",
+      "resolved_general_raw": "28.2%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "72%",
+      "source_level_general": "10",
+      "source_level_special": "10",
+      "source_level_col2": "10",
+      "source_hts_general": "6112201010",
+      "source_hts_special": "6112201010",
+      "source_hts_col2": "6112201010",
+      "inheritance_path": [
+        "6112201010",
+        "61122010",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 28.2%, present on 6112.20.10.10 (10-digit record). This value matches the parent rate.",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.10.10 (10-digit record). This value matches the parent rate.",
+      "explanation_col2": "Column 2 duty is 72%, present on 6112.20.10.10 (10-digit record). This value matches the parent rate.",
+      "explanation_path": "Checked: 6112.20.10.10 \u2192 6112.20.10 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  },
+  {
+    "hts_code": "6112.20.10.20",
+    "resolved": {
+      "hts_code": "6112201020",
+      "resolved_general_raw": "28.2%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "72%",
+      "source_level_general": "10",
+      "source_level_special": "10",
+      "source_level_col2": "10",
+      "source_hts_general": "6112201020",
+      "source_hts_special": "6112201020",
+      "source_hts_col2": "6112201020",
+      "inheritance_path": [
+        "6112201020",
+        "61122010",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 28.2%, present on 6112.20.10.20 (10-digit record). This value matches the parent rate.",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.10.20 (10-digit record). This value matches the parent rate.",
+      "explanation_col2": "Column 2 duty is 72%, present on 6112.20.10.20 (10-digit record). This value matches the parent rate.",
+      "explanation_path": "Checked: 6112.20.10.20 \u2192 6112.20.10 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  },
+  {
+    "hts_code": "6112.20.10.30",
+    "resolved": {
+      "hts_code": "6112201030",
+      "resolved_general_raw": "28.2%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "72%",
+      "source_level_general": "10",
+      "source_level_special": "10",
+      "source_level_col2": "10",
+      "source_hts_general": "6112201030",
+      "source_hts_special": "6112201030",
+      "source_hts_col2": "6112201030",
+      "inheritance_path": [
+        "6112201030",
+        "61122010",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 28.2%, present on 6112.20.10.30 (10-digit record). This value matches the parent rate.",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.10.30 (10-digit record). This value matches the parent rate.",
+      "explanation_col2": "Column 2 duty is 72%, present on 6112.20.10.30 (10-digit record). This value matches the parent rate.",
+      "explanation_path": "Checked: 6112.20.10.30 \u2192 6112.20.10 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  },
+  {
+    "hts_code": "6112.20.10.90",
+    "resolved": {
+      "hts_code": "6112201090",
+      "resolved_general_raw": "28.2%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "72%",
+      "source_level_general": "10",
+      "source_level_special": "10",
+      "source_level_col2": "10",
+      "source_hts_general": "6112201090",
+      "source_hts_special": "6112201090",
+      "source_hts_col2": "6112201090",
+      "inheritance_path": [
+        "6112201090",
+        "61122010",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 28.2%, present on 6112.20.10.90 (10-digit record). This value matches the parent rate.",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.10.90 (10-digit record). This value matches the parent rate.",
+      "explanation_col2": "Column 2 duty is 72%, present on 6112.20.10.90 (10-digit record). This value matches the parent rate.",
+      "explanation_path": "Checked: 6112.20.10.90 \u2192 6112.20.10 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  },
+  {
+    "hts_code": "6112.20.20.10",
+    "resolved": {
+      "hts_code": "6112202010",
+      "resolved_general_raw": "8.3%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,E*,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "90%",
+      "source_level_general": "10",
+      "source_level_special": "10",
+      "source_level_col2": "10",
+      "source_hts_general": "6112202010",
+      "source_hts_special": "6112202010",
+      "source_hts_col2": "6112202010",
+      "inheritance_path": [
+        "6112202010",
+        "61122020",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 8.3%, present on 6112.20.20.10 (10-digit record). This value matches the parent rate.",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,E*,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.20.10 (10-digit record). This value matches the parent rate.",
+      "explanation_col2": "Column 2 duty is 90%, present on 6112.20.20.10 (10-digit record). This value matches the parent rate.",
+      "explanation_path": "Checked: 6112.20.20.10 \u2192 6112.20.20 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  },
+  {
+    "hts_code": "6112.20.20.20",
+    "resolved": {
+      "hts_code": "6112202020",
+      "resolved_general_raw": "8.3%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,E*,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "90%",
+      "source_level_general": "10",
+      "source_level_special": "10",
+      "source_level_col2": "10",
+      "source_hts_general": "6112202020",
+      "source_hts_special": "6112202020",
+      "source_hts_col2": "6112202020",
+      "inheritance_path": [
+        "6112202020",
+        "61122020",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 8.3%, present on 6112.20.20.20 (10-digit record). This value matches the parent rate.",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,E*,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.20.20 (10-digit record). This value matches the parent rate.",
+      "explanation_col2": "Column 2 duty is 90%, present on 6112.20.20.20 (10-digit record). This value matches the parent rate.",
+      "explanation_path": "Checked: 6112.20.20.20 \u2192 6112.20.20 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  },
+  {
+    "hts_code": "6112.20.20.30",
+    "resolved": {
+      "hts_code": "6112202030",
+      "resolved_general_raw": "8.3%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,E*,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "90%",
+      "source_level_general": "10",
+      "source_level_special": "10",
+      "source_level_col2": "10",
+      "source_hts_general": "6112202030",
+      "source_hts_special": "6112202030",
+      "source_hts_col2": "6112202030",
+      "inheritance_path": [
+        "6112202030",
+        "61122020",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 8.3%, present on 6112.20.20.30 (10-digit record). This value matches the parent rate.",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,E*,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.20.30 (10-digit record). This value matches the parent rate.",
+      "explanation_col2": "Column 2 duty is 90%, present on 6112.20.20.30 (10-digit record). This value matches the parent rate.",
+      "explanation_path": "Checked: 6112.20.20.30 \u2192 6112.20.20 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  },
+  {
+    "hts_code": "6112.20.10",
+    "resolved": {
+      "hts_code": "61122010",
+      "resolved_general_raw": "28.2%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "72%",
+      "source_level_general": "8",
+      "source_level_special": "8",
+      "source_level_col2": "8",
+      "source_hts_general": "61122010",
+      "source_hts_special": "61122010",
+      "source_hts_col2": "61122010",
+      "inheritance_path": [
+        "61122010",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 28.2%, present on 6112.20.10 (8-digit record).",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.10 (8-digit record).",
+      "explanation_col2": "Column 2 duty is 72%, present on 6112.20.10 (8-digit record).",
+      "explanation_path": "Checked: 6112.20.10 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  },
+  {
+    "hts_code": "6112.20.20",
+    "resolved": {
+      "hts_code": "61122020",
+      "resolved_general_raw": "8.3%",
+      "resolved_special_raw": "Free(AU,BH,CL,CO,E*,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "resolved_col2_raw": "90%",
+      "source_level_general": "8",
+      "source_level_special": "8",
+      "source_level_col2": "8",
+      "source_hts_general": "61122020",
+      "source_hts_special": "61122020",
+      "source_hts_col2": "61122020",
+      "inheritance_path": [
+        "61122020",
+        "611220"
+      ],
+      "flags": [],
+      "explanation_general": "General duty is 8.3%, present on 6112.20.20 (8-digit record).",
+      "explanation_special": "Special duty is Free(AU,BH,CL,CO,E*,IL,JO,KR, MA,OM,P,PA, PE,S,SG), present on 6112.20.20 (8-digit record).",
+      "explanation_col2": "Column 2 duty is 90%, present on 6112.20.20 (8-digit record).",
+      "explanation_path": "Checked: 6112.20.20 \u2192 6112.20"
+    },
+    "issues": [],
+    "warnings": [],
+    "valid": true
+  }
+]

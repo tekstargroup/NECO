@@ -1,0 +1,137 @@
+ç"""
+Sprint 12 API Dependencies - Clerk-based authentication and org scoping
+
+Clerk integration for authentication.
+Org scoping enforced on all shipment endpoints.
+
+IMPORTANT (local dev posture):
+- We accept Authorization: Bearer <Clerk JWT>
+- We extract clerk_user_id from JWT claim "sub"
+- We do NOT trust X-Clerk-User-Id
+- We keep X-Clerk-Org-Id as an optional org selector (safe for now)
+- JWT signature verification is TODO before any pilot (non-negotiable)
+"""
+
+from fastapi import Depends, HTTPException, status, Header, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from typing import Optional
+
+from app.core.database import get_db
+from app.models.user import User
+from app.models.organization import Organization
+from app.models.membership import Membership
+
+
+def _extract_bearer_token(request: Request) -> str:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required (Authorization header missing)",
+        )
+    return auth_header.split(" ", 1)[1].strip()
+
+
+def _extract_clerk_user_id_from_token_unverified(token: str) -> Optional[str]:
+    """
+    LOCAL DEV ONLY.
+    Extracts Clerk user id from JWT 'sub' without verifying signature.
+    MUST be replaced with real Clerk JWKS verification before any pilot.
+    """
+    try:
+        from jose import jwt
+        claims = jwt.get_unverified_claims(token)
+        return claims.get("sub")
+    except Exception:
+        return None
+
+
+async def get_current_user_sprint12(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """
+    Get current authenticated user (Sprint 12) using Clerk JWT.
+    """
+
+    token = _extract_bearer_token(request)
+    clerk_user_id = _extract_clerk_user_id_from_token_unverified(token)
+
+    if not clerk_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required (Invalid Clerk token)",
+        )
+
+    result = await db.execute(
+        select(User).where(User.clerk_user_id == clerk_user_id)
+    )
+    user = result.scalar_one_or_none()
+
+    # DEV AUTO-PROVISION (local only)
+    if user is None:
+        user = User(
+            clerk_user_id=clerk_user_id,
+            is_active=True,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    if not user.clerk_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not authenticated (missing clerk_user_id)",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user",
+        )
+
+    return user
+
+
+async def get_current_organization(
+    x_clerk_org_id: Optional[str] = Header(None, alias="X-Clerk-Org-Id"),
+    current_user: User = Depends(get_current_user_sprint12),
+    db: AsyncSession = Depends(get_db),
+) -> Organization:
+    """
+    Get current organization (Sprint 12).
+    """
+
+    if not x_clerk_org_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization required (Clerk org ID missing)",
+        )
+
+    result = await db.execute(
+        select(Organization).where(Organization.clerk_org_id == x_clerk_org_id)
+    )
+    organization = result.scalar_one_or_none()
+
+    if organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found",
+        )
+
+    result = await db.execute(
+        select(Membership).where(
+            Membership.user_id == current_user.id,
+            Membership.organization_id == organization.id,
+        )
+    )
+    membership = result.scalar_one_or_none()
+
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found",
+        )
+
+    return organization

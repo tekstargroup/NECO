@@ -1,0 +1,214 @@
+{
+  "sources": [
+    {
+      "name": "CBP_CSMS",
+      "type": "rss",
+      "url": "https://www.cbp.gov/rss/trade",
+      "frequency": "5min",
+      "tier": 1,
+      "description": "CBP Trade / CSMS-related updates (no dedicated CSMS RSS; trade feed covers cargo/trade messaging)"
+    },
+    {
+      "name": "CBP_ACE",
+      "type": "rss",
+      "url": "https://www.cbp.gov/rss/trade/ace",
+      "frequency": "5min",
+      "tier": 1,
+      "description": "ACE Cargo Messaging Service updates"
+    },
+    {
+      "name": "CBP_DUTY_RATES",
+      "type": "rss",
+      "url": "https://www.cbp.gov/rss/trade/duty-rates",
+      "frequency": "6h",
+      "tier": 1,
+      "description": "Duty rate updates"
+    },
+    {
+      "name": "CBP_LEGAL_DECISIONS",
+      "type": "rss",
+      "url": "https://www.cbp.gov/rss/trade/legal-decisions-publications",
+      "frequency": "6h",
+      "tier": 1,
+      "description": "Trade-related legal decisions and publications"
+    },
+    {
+      "name": "FEDERAL_REGISTER",
+      "type": "api",
+      "handler": "federal_register",
+      "url": "https://www.federalregister.gov/api/v1/documents",
+      "frequency": "15min",
+      "tier": 1,
+      "description": "Federal Register - Section 301, tariff modifications, quotas"
+    },
+    {
+      "name": "USITC_HTS",
+      "type": "api",
+      "handler": "usitc_hts",
+      "url": "https://hts.usitc.gov/api/search",
+      "frequency": "1d",
+      "tier": 1,
+      "description": "USITC HTS updates - diff-based ingestion"
+    },
+    {
+      "name": "USTR_NEWS",
+      "type": "rss",
+      "url": "https://ustr.gov/archive/Meta_Content/RSS/ustr_recent_news_10495.xml",
+      "frequency": "1h",
+      "tier": 1,
+      "description": "USTR recent news - Section 301, trade actions"
+    },
+    {
+      "name": "USTR_PRESS",
+      "type": "rss",
+      "url": "https://ustr.gov/archive/Meta_Content/RSS/ustr_press_releases_10475.xml",
+      "frequency": "1h",
+      "tier": 1,
+      "description": "USTR press releases"
+    },
+    {
+      "name": "CBP_CROSS",
+      "type": "scrape",
+      "handler": "cbp_cross",
+      "url": "https://rulings.cbp.gov/search",
+      "frequency": "1h",
+      "tier": 1,
+      "description": "CBP CROSS rulings database"
+    },
+    {
+      "name": "OFAC_RECENT_ACTIONS",
+      "type": "scrape",
+      "handler": "ofac_recent_actions",
+      "url": "https://ofac.treasury.gov/recent-actions",
+      "frequency": "6h",
+      "tier": 2,
+      "description": "OFAC recent actions - sanctions updates (RSS retired Jan 2025)"
+    },
+    {
+      "name": "FDA_IMPORT_ALERTS",
+      "type": "scrape",
+      "handler": "fda_import_alerts",
+      "url": "https://www.accessdata.fda.gov/cms_ia/iapublishdate.html",
+      "frequency": "6h",
+      "tier": 2,
+      "description": "FDA import alerts by publish date"
+    },
+    {
+      "name": "USDA_FSIS",
+      "type": "api",
+      "handler": "usda_fsis_recall",
+      "url": "https://www.fsis.usda.gov/fsis/api/recall/v/1",
+      "frequency": "6h",
+      "tier": 2,
+      "description": "USDA FSIS recalls and import-related updates (Recall API)"
+    },
+    {
+      "name": "BIS_FEDERAL_REGISTER",
+      "type": "api",
+      "handler": "federal_register_search",
+      "url": "https://www.federalregister.gov/api/v1/documents",
+      "frequency": "6h",
+      "tier": 2,
+      "params": {"conditions[term]": "export control"},
+      "description": "BIS export control Federal Register notices"
+    },
+    {
+      "name": "ITA_ADCVD",
+      "type": "rss",
+      "url": "https://www.cbp.gov/rss/trade-adcvd",
+      "frequency": "6h",
+      "tier": 2,
+      "description": "Anti-dumping and countervailing duties"
+    },
+    {
+      "name": "WTO_DISPUTES",
+      "type": "rss",
+      "url": "http://www.wto.org/library/rss/latest_news_e.xml",
+      "frequency": "1d",
+      "tier": 3,
+      "description": "WTO news - trade disputes"
+    },
+    {
+      "name": "EU_TAXUD",
+      "type": "rss",
+      "url": "https://taxation-customs.ec.europa.eu/node/2/rss_en",
+      "frequency": "1d",
+      "tier": 3,
+      "description": "EU DG TAXUD - early tariff signals"
+    },
+    {
+      "name": "WCO_NEWS",
+      "type": "scrape",
+      "handler": "wco_news",
+      "url": "https://www.wcoomd.org/en/media/newsroom.aspx",
+      "frequency": "1d",
+      "tier": 3,
+      "description": "WCO - HS code changes, classification guidance"
+    },
+    {
+      "name": "WHITE_HOUSE_BRIEFING",
+      "type": "rss",
+      "url": "https://www.whitehouse.gov/briefing-room/feed/",
+      "frequency": "6h",
+      "tier": 4,
+      "description": "White House - executive orders, tariffs, sanctions"
+    },
+    {
+      "name": "CONGRESS_GOV",
+      "type": "api",
+      "handler": "congress",
+      "url": "https://api.congress.gov/v3/bill",
+      "frequency": "1d",
+      "tier": 4,
+      "description": "Congress - bills affecting tariffs/trade"
+    },
+    {
+      "name": "CBP_QUOTA_BULLETINS",
+      "type": "rss",
+      "url": "https://www.cbp.gov/rss/trade",
+      "frequency": "6h",
+      "tier": 5,
+      "description": "CBP quota bulletins (via trade feed)"
+    },
+    {
+      "name": "CBP_UBR",
+      "type": "rss",
+      "url": "https://www.cbp.gov/rss/trade/unified-business-resumption-messaging",
+      "frequency": "5min",
+      "tier": 5,
+      "description": "Unified Business Resumption messaging"
+    },
+    {
+      "name": "FREIGHTWAVES",
+      "type": "rss",
+      "url": "https://www.freightwaves.com/feed",
+      "frequency": "6h",
+      "tier": 6,
+      "description": "FreightWaves - commercial trade intelligence"
+    },
+    {
+      "name": "JOC",
+      "type": "rss",
+      "url": "https://www.joc.com/api/rssfeed",
+      "frequency": "6h",
+      "tier": 6,
+      "description": "Journal of Commerce"
+    },
+    {
+      "name": "SUPPLY_CHAIN_DIVE",
+      "type": "rss",
+      "url": "https://www.supplychaindive.com/feed/",
+      "frequency": "6h",
+      "tier": 6,
+      "description": "SupplyChainDive"
+    },
+    {
+      "name": "FLEXPORT_BLOG",
+      "type": "rss",
+      "url": "https://www.flexport.com/blog/feed/",
+      "frequency": "1d",
+      "tier": 6,
+      "description": "Flexport customs/trade blog"
+    }
+  ]
+}

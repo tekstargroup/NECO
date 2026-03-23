@@ -1,0 +1,1885 @@
+{
+  "page": 2198,
+  "rows": [
+    {
+      "row_index": 0,
+      "y_coordinate": 0,
+      "word_count": 8,
+      "words": [
+        "Harmonized",
+        "Tariff",
+        "Schedule",
+        "of",
+        "the",
+        "United",
+        "States",
+        "(2025)"
+      ]
+    },
+    {
+      "row_index": 1,
+      "y_coordinate": 0,
+      "word_count": 5,
+      "words": [
+        "Annotated",
+        "for",
+        "Statistical",
+        "Reporting",
+        "Purposes"
+      ]
+    },
+    {
+      "row_index": 2,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "XI"
+      ]
+    },
+    {
+      "row_index": 3,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "61-69"
+      ]
+    },
+    {
+      "row_index": 4,
+      "y_coordinate": 0,
+      "word_count": 3,
+      "words": [
+        "RRaatteess",
+        "ooff",
+        "DDuuttyy"
+      ]
+    },
+    {
+      "row_index": 5,
+      "y_coordinate": 0,
+      "word_count": 3,
+      "words": [
+        "Heading/",
+        "Stat.",
+        "Unit"
+      ]
+    },
+    {
+      "row_index": 6,
+      "y_coordinate": 0,
+      "word_count": 6,
+      "words": [
+        "Suf-",
+        "Article",
+        "Description",
+        "of",
+        "11",
+        "2"
+      ]
+    },
+    {
+      "row_index": 7,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "Subheading"
+      ]
+    },
+    {
+      "row_index": 8,
+      "y_coordinate": 0,
+      "word_count": 4,
+      "words": [
+        "fix",
+        "Quantity",
+        "General",
+        "Special"
+      ]
+    },
+    {
+      "row_index": 9,
+      "y_coordinate": 0,
+      "word_count": 2,
+      "words": [
+        "6112(con.)",
+        "Tracksuits,ski-suitsandswimwear,knittedorcrocheted:"
+      ]
+    },
+    {
+      "row_index": 10,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "(con.)"
+      ]
+    },
+    {
+      "row_index": 11,
+      "y_coordinate": 0,
+      "word_count": 2,
+      "words": [
+        "6112.20",
+        "Ski-suits:"
+      ]
+    },
+    {
+      "row_index": 12,
+      "y_coordinate": 0,
+      "word_count": 6,
+      "words": [
+        "6112.20.10",
+        "Ofman-madefibers........................................................",
+        "..................",
+        "28.2%1/",
+        "Free(AU,BH,CL,",
+        "72%"
+      ]
+    },
+    {
+      "row_index": 13,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "CO,IL,JO,KR,"
+      ]
+    },
+    {
+      "row_index": 14,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "MA,OM,P,PA,"
+      ]
+    },
+    {
+      "row_index": 15,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "PE,S,SG)"
+      ]
+    },
+    {
+      "row_index": 16,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "Anoraks(includingski-jackets),windbreakers,and"
+      ]
+    },
+    {
+      "row_index": 17,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "similararticles:"
+      ]
+    },
+    {
+      "row_index": 18,
+      "y_coordinate": 0,
+      "word_count": 3,
+      "words": [
+        "10",
+        "Men'sorboys'(634)..........................................",
+        "doz."
+      ]
+    },
+    {
+      "row_index": 19,
+      "y_coordinate": 0,
+      "word_count": 1,
+      "words": [
+        "kg"
+      ]
+    }
+  ],
+  "state_transitions": [
+    {
+      "event": "SECTION_BAND_SHIFT",
+      "base": "6112.20.20",
+      "dx": -0.0004500000000007276,
+      "general_band_shifted": [
+        379.7199,
+        409.83295
+      ],
+      "special_band_shifted": null,
+      "col2_band_shifted": [
+        523.0,
+        542.0085
+      ],
+      "col2_90_matches": 1
+    },
+    {
+      "event": "BAND_CALIBRATION",
+      "general_band_6112_20_10": [
+        379.72035,
+        409.8334
+      ],
+      "special_band_6112_20_10": null,
+      "column2_band_6112_20_10": [
+        523.00045,
+        542.00895
+      ],
+      "calibration_rows": 1,
+      "col2_90_matches": [
+        {
+          "x0": 524.0,
+          "x1": 541.0085,
+          "row_id": 41,
+          "top": 433.96999999999997,
+          "text": "90%",
+          "band": "DUTY_BAND"
+        }
+      ],
+      "pct_83_candidates": [
+        {
+          "text": "28.2%1/",
+          "x0": 380.72035,
+          "x1": 408.8334,
+          "row_id": 12,
+          "top": 128.88080000000002,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "72%",
+          "x0": 524.00045,
+          "x1": 541.00895,
+          "row_id": 12,
+          "top": 130.37,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "Men'sorboys'(634)..........................................",
+          "x0": 168.32,
+          "x1": 333.517058,
+          "row_id": 18,
+          "top": 191.57000000000005,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(635).....................................",
+          "x0": 168.32010000000002,
+          "x1": 333.51709850000003,
+          "row_id": 20,
+          "top": 216.1700000000002,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "30",
+          "x0": 95.71430000000007,
+          "x1": 105.16630000000006,
+          "row_id": 24,
+          "top": 257.1700000000004,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "Men'sorboys'(634)...................................",
+          "x0": 182.72020000000006,
+          "x1": 333.5192185000001,
+          "row_id": 24,
+          "top": 257.1700000000004,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(635)..............................",
+          "x0": 182.72030000000007,
+          "x1": 333.5192505000001,
+          "row_id": 26,
+          "top": 281.7700000000005,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(648).....................................",
+          "x0": 168.32010000000002,
+          "x1": 333.51709850000003,
+          "row_id": 33,
+          "top": 357.77,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "80",
+          "x0": 95.71430000000005,
+          "x1": 105.16630000000005,
+          "row_id": 36,
+          "top": 388.56999999999994,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "8.3%1/",
+          "x0": 380.7199,
+          "x1": 404.1074,
+          "row_id": 40,
+          "top": 432.4808,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "90%",
+          "x0": 524.0,
+          "x1": 541.0085,
+          "row_id": 41,
+          "top": 433.96999999999997,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "Ofcotton(359)..........................................................",
+          "x0": 153.92,
+          "x1": 333.51863349999996,
+          "row_id": 45,
+          "top": 474.77000000000004,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "30",
+          "x0": 95.71409999999999,
+          "x1": 105.16609999999999,
+          "row_id": 50,
+          "top": 523.97,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "Other(859)................................................................",
+          "x0": 153.92,
+          "x1": 333.5191945,
+          "row_id": 50,
+          "top": 523.97,
+          "band": "DESC_BAND"
+        }
+      ]
+    },
+    {
+      "event": "BASE_FOUND",
+      "row": 12,
+      "base": "6112.20.10",
+      "normalized": "61122010",
+      "duty_captured": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 18,
+      "base": "6112.20.10",
+      "suffix": "10",
+      "code": "6112.20.10.10",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 20,
+      "base": "6112.20.10",
+      "suffix": "20",
+      "code": "6112.20.10.20",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 24,
+      "base": "6112.20.10",
+      "suffix": "30",
+      "code": "6112.20.10.30",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 26,
+      "base": "6112.20.10",
+      "suffix": "40",
+      "code": "6112.20.10.40",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 28,
+      "base": "6112.20.10",
+      "suffix": "50",
+      "code": "6112.20.10.50",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 31,
+      "base": "6112.20.10",
+      "suffix": "60",
+      "code": "6112.20.10.60",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 33,
+      "base": "6112.20.10",
+      "suffix": "70",
+      "code": "6112.20.10.70",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 36,
+      "base": "6112.20.10",
+      "suffix": "80",
+      "code": "6112.20.10.80",
+      "duty_from_base": true
+    },
+    {
+      "event": "SPECIAL_DUTY_DEBUG_90",
+      "row": 38,
+      "code": "6112.20.10.90",
+      "base": "6112.20.10",
+      "duty_special": "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "special_band_info": {
+        "section_special_band": null,
+        "row_tokens_in_special_band": [],
+        "special_candidates_found": false,
+        "base_row_duty": [
+          "28.2%",
+          "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+          "72%"
+        ]
+      }
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 38,
+      "base": "6112.20.10",
+      "suffix": "90",
+      "code": "6112.20.10.90",
+      "duty_from_base": true
+    },
+    {
+      "event": "BASE_FOUND",
+      "row": 41,
+      "base": "6112.20.20",
+      "normalized": "61122020",
+      "duty_captured": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 45,
+      "base": "6112.20.20",
+      "suffix": "10",
+      "code": "6112.20.20.10",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 47,
+      "base": "6112.20.20",
+      "suffix": "20",
+      "code": "6112.20.20.20",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 50,
+      "base": "6112.20.20",
+      "suffix": "30",
+      "code": "6112.20.20.30",
+      "duty_from_base": true
+    }
+  ],
+  "constructed_records": [],
+  "token_diagnostics": {
+    "base_tokens_count": 2,
+    "base_tokens": [
+      {
+        "text": "6112.20.10",
+        "x0": 47.80045000000007,
+        "y0": 0
+      },
+      {
+        "text": "6112.20.20",
+        "x0": 47.8,
+        "y0": 0
+      }
+    ],
+    "suffix_tokens_count": 13,
+    "suffix_tokens": [
+      {
+        "text": "11",
+        "x0": 448.054,
+        "y0": 0
+      },
+      {
+        "text": "10",
+        "x0": 95.71409999999999,
+        "y0": 0
+      },
+      {
+        "text": "20",
+        "x0": 95.71420000000002,
+        "y0": 0
+      },
+      {
+        "text": "30",
+        "x0": 95.71430000000007,
+        "y0": 0
+      },
+      {
+        "text": "40",
+        "x0": 95.71440000000007,
+        "y0": 0
+      },
+      {
+        "text": "50",
+        "x0": 95.71450000000011,
+        "y0": 0
+      },
+      {
+        "text": "60",
+        "x0": 95.71409999999999,
+        "y0": 0
+      },
+      {
+        "text": "70",
+        "x0": 95.71420000000002,
+        "y0": 0
+      },
+      {
+        "text": "80",
+        "x0": 95.71430000000005,
+        "y0": 0
+      },
+      {
+        "text": "90",
+        "x0": 95.71409999999999,
+        "y0": 0
+      },
+      {
+        "text": "10",
+        "x0": 95.71409999999999,
+        "y0": 0
+      },
+      {
+        "text": "20",
+        "x0": 95.71409999999999,
+        "y0": 0
+      },
+      {
+        "text": "30",
+        "x0": 95.71409999999999,
+        "y0": 0
+      }
+    ],
+    "full_dotted_tokens_count": 0,
+    "full_dotted_tokens": []
+  },
+  "column_bands": [
+    {
+      "name": "code_base",
+      "x_min": 50,
+      "x_max": 50,
+      "word_count": 5,
+      "peaks": [
+        [
+          50,
+          5
+        ]
+      ]
+    },
+    {
+      "name": "code_base",
+      "x_min": 95,
+      "x_max": 95,
+      "word_count": 15,
+      "peaks": [
+        [
+          95,
+          15
+        ]
+      ]
+    },
+    {
+      "name": "suffix",
+      "x_min": 110,
+      "x_max": 110,
+      "word_count": 2,
+      "peaks": [
+        [
+          110,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 140,
+      "x_max": 140,
+      "word_count": 2,
+      "peaks": [
+        [
+          140,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 155,
+      "x_max": 155,
+      "word_count": 8,
+      "peaks": [
+        [
+          155,
+          8
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 170,
+      "x_max": 170,
+      "word_count": 9,
+      "peaks": [
+        [
+          170,
+          9
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 185,
+      "x_max": 195,
+      "word_count": 4,
+      "peaks": [
+        [
+          195,
+          2
+        ],
+        [
+          185,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 235,
+      "x_max": 235,
+      "word_count": 1,
+      "peaks": [
+        [
+          235,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 265,
+      "x_max": 265,
+      "word_count": 1,
+      "peaks": [
+        [
+          265,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 315,
+      "x_max": 315,
+      "word_count": 1,
+      "peaks": [
+        [
+          315,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 330,
+      "x_max": 340,
+      "word_count": 27,
+      "peaks": [
+        [
+          340,
+          26
+        ],
+        [
+          330,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "description",
+      "x_min": 340,
+      "x_max": 350,
+      "word_count": 29,
+      "peaks": [
+        [
+          340,
+          26
+        ],
+        [
+          350,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "general",
+      "x_min": 380,
+      "x_max": 385,
+      "word_count": 3,
+      "peaks": [
+        [
+          380,
+          2
+        ],
+        [
+          385,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "general",
+      "x_min": 425,
+      "x_max": 425,
+      "word_count": 1,
+      "peaks": [
+        [
+          425,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "special",
+      "x_min": 445,
+      "x_max": 450,
+      "word_count": 9,
+      "peaks": [
+        [
+          450,
+          7
+        ],
+        [
+          445,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "special",
+      "x_min": 525,
+      "x_max": 525,
+      "word_count": 2,
+      "peaks": [
+        [
+          525,
+          2
+        ]
+      ]
+    }
+  ],
+  "x0_histogram": {
+    "total_words": 110,
+    "unique_x0_bins": 37,
+    "top_peaks": [
+      {
+        "x0": 340,
+        "count": 26
+      },
+      {
+        "x0": 95,
+        "count": 15
+      },
+      {
+        "x0": 170,
+        "count": 9
+      },
+      {
+        "x0": 155,
+        "count": 8
+      },
+      {
+        "x0": 450,
+        "count": 7
+      },
+      {
+        "x0": 50,
+        "count": 5
+      },
+      {
+        "x0": 350,
+        "count": 3
+      },
+      {
+        "x0": 195,
+        "count": 2
+      },
+      {
+        "x0": 110,
+        "count": 2
+      },
+      {
+        "x0": 140,
+        "count": 2
+      },
+      {
+        "x0": 380,
+        "count": 2
+      },
+      {
+        "x0": 445,
+        "count": 2
+      },
+      {
+        "x0": 525,
+        "count": 2
+      },
+      {
+        "x0": 185,
+        "count": 2
+      },
+      {
+        "x0": 235,
+        "count": 1
+      },
+      {
+        "x0": 265,
+        "count": 1
+      },
+      {
+        "x0": 315,
+        "count": 1
+      },
+      {
+        "x0": 330,
+        "count": 1
+      },
+      {
+        "x0": 385,
+        "count": 1
+      },
+      {
+        "x0": 425,
+        "count": 1
+      }
+    ]
+  },
+  "first_20_words": [
+    {
+      "text": "Harmonized",
+      "x0": 170.314,
+      "top": 26.019000000000005,
+      "bottom": 37.019000000000005,
+      "doctop": 1740050.019
+    },
+    {
+      "text": "Tariff",
+      "x0": 235.33510791,
+      "top": 26.019000000000005,
+      "bottom": 37.019000000000005,
+      "doctop": 1740050.019
+    },
+    {
+      "text": "Schedule",
+      "x0": 265.01312771,
+      "top": 26.019000000000005,
+      "bottom": 37.019000000000005,
+      "doctop": 1740050.019
+    },
+    {
+      "text": "of",
+      "x0": 316.86682521,
+      "top": 26.019000000000005,
+      "bottom": 37.019000000000005,
+      "doctop": 1740050.019
+    },
+    {
+      "text": "the",
+      "x0": 330.30882521,
+      "top": 26.019000000000005,
+      "bottom": 37.019000000000005,
+      "doctop": 1740050.019
+    },
+    {
+      "text": "United",
+      "x0": 349.86682521,
+      "top": 26.019000000000005,
+      "bottom": 37.019000000000005,
+      "doctop": 1740050.019
+    },
+    {
+      "text": "States",
+      "x0": 387.14582521000005,
+      "top": 26.019000000000005,
+      "bottom": 37.019000000000005,
+      "doctop": 1740050.019
+    },
+    {
+      "text": "(2025)",
+      "x0": 423.2148252100001,
+      "top": 26.019000000000005,
+      "bottom": 37.019000000000005,
+      "doctop": 1740050.019
+    },
+    {
+      "text": "Annotated",
+      "x0": 243.6538,
+      "top": 38.91333999999995,
+      "bottom": 45.91333999999995,
+      "doctop": 1740062.91334
+    },
+    {
+      "text": "for",
+      "x0": 277.51279999999997,
+      "top": 38.91333999999995,
+      "bottom": 45.91333999999995,
+      "doctop": 1740062.91334
+    },
+    {
+      "text": "Statistical",
+      "x0": 287.41771669999997,
+      "top": 38.91333999999995,
+      "bottom": 45.91333999999995,
+      "doctop": 1740062.91334
+    },
+    {
+      "text": "Reporting",
+      "x0": 319.3167167,
+      "top": 38.91333999999995,
+      "bottom": 45.91333999999995,
+      "doctop": 1740062.91334
+    },
+    {
+      "text": "Purposes",
+      "x0": 351.88769709999997,
+      "top": 38.91333999999995,
+      "bottom": 45.91333999999995,
+      "doctop": 1740062.91334
+    },
+    {
+      "text": "XI",
+      "x0": 572.9848,
+      "top": 47.312169999999924,
+      "bottom": 54.312169999999924,
+      "doctop": 1740071.31217
+    },
+    {
+      "text": "61-69",
+      "x0": 561.7008,
+      "top": 55.71138999999994,
+      "bottom": 62.71138999999994,
+      "doctop": 1740079.71139
+    },
+    {
+      "text": "Heading/",
+      "x0": 55.473300000000044,
+      "top": 68.31404999999995,
+      "bottom": 75.31404999999995,
+      "doctop": 1740092.31405
+    },
+    {
+      "text": "Stat.",
+      "x0": 93.24010000000004,
+      "top": 67.81399999999996,
+      "bottom": 74.81399999999996,
+      "doctop": 1740091.814
+    },
+    {
+      "text": "Unit",
+      "x0": 350.89700000000005,
+      "top": 67.81399999999996,
+      "bottom": 74.81399999999996,
+      "doctop": 1740091.814
+    },
+    {
+      "text": "RRaatteess",
+      "x0": 457.237,
+      "top": 67.31399999999996,
+      "bottom": 75.19399999999996,
+      "doctop": 1740091.314
+    },
+    {
+      "text": "ooff",
+      "x0": 477.46700000000004,
+      "top": 67.31399999999996,
+      "bottom": 75.19399999999996,
+      "doctop": 1740091.314
+    }
+  ],
+  "word_coordinate_ranges": {
+    "top_min": 26.019000000000005,
+    "top_max": 534.37,
+    "top_samples": [
+      26.019000000000005,
+      38.91333999999995,
+      47.312169999999924,
+      55.71138999999994,
+      67.31399999999996,
+      67.81399999999996,
+      68.31404999999995,
+      76.21321999999998,
+      76.21326999999997,
+      76.71326999999997
+    ],
+    "bottom_min": 37.019000000000005,
+    "bottom_max": 542.87,
+    "bottom_samples": [
+      37.019000000000005,
+      45.91333999999995,
+      54.312169999999924,
+      62.71138999999994,
+      74.81399999999996,
+      75.19399999999996,
+      75.31404999999995,
+      83.21321999999998,
+      83.21326999999997,
+      83.68999999999994
+    ],
+    "doctop_min": 1740050.019,
+    "doctop_max": 1740558.37,
+    "doctop_samples": [
+      1740050.019,
+      1740062.91334,
+      1740071.31217,
+      1740079.71139,
+      1740091.314,
+      1740091.814,
+      1740092.31405,
+      1740100.21322,
+      1740100.21327,
+      1740100.71327
+    ]
+  },
+  "column_assignment_verification": {
+    "base_tokens_in_code_col": 2,
+    "base_tokens_total": 2,
+    "suffix_tokens_in_suffix_col": 12,
+    "suffix_tokens_total": 13
+  },
+  "band_classification": {
+    "counts": {
+      "DESC_BAND": 35,
+      "OTHER": 34,
+      "DUTY_BAND": 20,
+      "BASE_BAND": 8,
+      "SUFFIX_BAND": 13
+    },
+    "samples": {
+      "DESC_BAND": [
+        {
+          "text": "Harmonized",
+          "row": 0,
+          "x0": 170.314
+        },
+        {
+          "text": "Tariff",
+          "row": 0,
+          "x0": 235.33510791
+        },
+        {
+          "text": "Schedule",
+          "row": 0,
+          "x0": 265.01312771
+        },
+        {
+          "text": "of",
+          "row": 0,
+          "x0": 316.86682521
+        },
+        {
+          "text": "the",
+          "row": 0,
+          "x0": 330.30882521
+        },
+        {
+          "text": "Annotated",
+          "row": 1,
+          "x0": 243.6538
+        },
+        {
+          "text": "for",
+          "row": 1,
+          "x0": 277.51279999999997
+        },
+        {
+          "text": "Statistical",
+          "row": 1,
+          "x0": 287.41771669999997
+        },
+        {
+          "text": "Reporting",
+          "row": 1,
+          "x0": 319.3167167
+        },
+        {
+          "text": "Article",
+          "row": 6,
+          "x0": 193.72810000000004
+        }
+      ],
+      "OTHER": [
+        {
+          "text": "United",
+          "row": 0,
+          "x0": 349.86682521
+        },
+        {
+          "text": "Purposes",
+          "row": 1,
+          "x0": 351.88769709999997
+        },
+        {
+          "text": "XI",
+          "row": 2,
+          "x0": 572.9848
+        },
+        {
+          "text": "61-69",
+          "row": 3,
+          "x0": 561.7008
+        },
+        {
+          "text": "Unit",
+          "row": 5,
+          "x0": 350.89700000000005
+        },
+        {
+          "text": "of",
+          "row": 6,
+          "x0": 354.20130000000006
+        },
+        {
+          "text": "2",
+          "row": 6,
+          "x0": 548.1342500000001
+        },
+        {
+          "text": "Quantity",
+          "row": 8,
+          "x0": 344.08610000000004
+        },
+        {
+          "text": "..................",
+          "row": 12,
+          "x0": 337.52
+        },
+        {
+          "text": "doz.",
+          "row": 18,
+          "x0": 337.5201
+        }
+      ],
+      "DUTY_BAND": [
+        {
+          "text": "States",
+          "row": 0,
+          "x0": 387.14582521000005
+        },
+        {
+          "text": "(2025)",
+          "row": 0,
+          "x0": 423.2148252100001
+        },
+        {
+          "text": "RRaatteess",
+          "row": 4,
+          "x0": 457.237
+        },
+        {
+          "text": "ooff",
+          "row": 4,
+          "x0": 477.46700000000004
+        },
+        {
+          "text": "DDuuttyy",
+          "row": 4,
+          "x0": 485.25100000000003
+        },
+        {
+          "text": "11",
+          "row": 6,
+          "x0": 448.054
+        },
+        {
+          "text": "General",
+          "row": 8,
+          "x0": 398.70535000000007
+        },
+        {
+          "text": "Special",
+          "row": 8,
+          "x0": 471.2834500000001
+        },
+        {
+          "text": "28.2%1/",
+          "row": 12,
+          "x0": 380.72035
+        },
+        {
+          "text": "Free(AU,BH,CL,",
+          "row": 12,
+          "x0": 445.52035
+        }
+      ],
+      "BASE_BAND": [
+        {
+          "text": "Heading/",
+          "row": 5,
+          "x0": 55.473300000000044
+        },
+        {
+          "text": "Stat.",
+          "row": 5,
+          "x0": 93.24010000000004
+        },
+        {
+          "text": "Suf-",
+          "row": 6,
+          "x0": 94.02135000000004
+        },
+        {
+          "text": "Subheading",
+          "row": 7,
+          "x0": 50.80025000000005
+        },
+        {
+          "text": "6112(con.)",
+          "row": 9,
+          "x0": 47.800450000000055
+        },
+        {
+          "text": "6112.20",
+          "row": 11,
+          "x0": 47.800450000000055
+        },
+        {
+          "text": "6112.20.10",
+          "row": 12,
+          "x0": 47.80045000000007
+        },
+        {
+          "text": "6112.20.20",
+          "row": 41,
+          "x0": 47.8
+        }
+      ],
+      "SUFFIX_BAND": [
+        {
+          "text": "fix",
+          "row": 8,
+          "x0": 96.94010000000004
+        },
+        {
+          "text": "10",
+          "row": 18,
+          "x0": 95.71409999999999
+        },
+        {
+          "text": "20",
+          "row": 20,
+          "x0": 95.71420000000002
+        },
+        {
+          "text": "30",
+          "row": 24,
+          "x0": 95.71430000000007
+        },
+        {
+          "text": "40",
+          "row": 26,
+          "x0": 95.71440000000007
+        },
+        {
+          "text": "50",
+          "row": 28,
+          "x0": 95.71450000000011
+        },
+        {
+          "text": "60",
+          "row": 31,
+          "x0": 95.71409999999999
+        },
+        {
+          "text": "70",
+          "row": 33,
+          "x0": 95.71420000000002
+        },
+        {
+          "text": "80",
+          "row": 36,
+          "x0": 95.71430000000005
+        },
+        {
+          "text": "90",
+          "row": 38,
+          "x0": 95.71409999999999
+        }
+      ]
+    }
+  },
+  "trace_events": [
+    {
+      "event": "SECTION_BAND_SHIFT",
+      "base": "6112.20.20",
+      "dx": -0.0004500000000007276,
+      "general_band_shifted": [
+        379.7199,
+        409.83295
+      ],
+      "special_band_shifted": null,
+      "col2_band_shifted": [
+        523.0,
+        542.0085
+      ],
+      "col2_90_matches": 1
+    },
+    {
+      "event": "BAND_CALIBRATION",
+      "general_band_6112_20_10": [
+        379.72035,
+        409.8334
+      ],
+      "special_band_6112_20_10": null,
+      "column2_band_6112_20_10": [
+        523.00045,
+        542.00895
+      ],
+      "calibration_rows": 1,
+      "col2_90_matches": [
+        {
+          "x0": 524.0,
+          "x1": 541.0085,
+          "row_id": 41,
+          "top": 433.96999999999997,
+          "text": "90%",
+          "band": "DUTY_BAND"
+        }
+      ],
+      "pct_83_candidates": [
+        {
+          "text": "28.2%1/",
+          "x0": 380.72035,
+          "x1": 408.8334,
+          "row_id": 12,
+          "top": 128.88080000000002,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "72%",
+          "x0": 524.00045,
+          "x1": 541.00895,
+          "row_id": 12,
+          "top": 130.37,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "Men'sorboys'(634)..........................................",
+          "x0": 168.32,
+          "x1": 333.517058,
+          "row_id": 18,
+          "top": 191.57000000000005,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(635).....................................",
+          "x0": 168.32010000000002,
+          "x1": 333.51709850000003,
+          "row_id": 20,
+          "top": 216.1700000000002,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "30",
+          "x0": 95.71430000000007,
+          "x1": 105.16630000000006,
+          "row_id": 24,
+          "top": 257.1700000000004,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "Men'sorboys'(634)...................................",
+          "x0": 182.72020000000006,
+          "x1": 333.5192185000001,
+          "row_id": 24,
+          "top": 257.1700000000004,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(635)..............................",
+          "x0": 182.72030000000007,
+          "x1": 333.5192505000001,
+          "row_id": 26,
+          "top": 281.7700000000005,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(648).....................................",
+          "x0": 168.32010000000002,
+          "x1": 333.51709850000003,
+          "row_id": 33,
+          "top": 357.77,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "80",
+          "x0": 95.71430000000005,
+          "x1": 105.16630000000005,
+          "row_id": 36,
+          "top": 388.56999999999994,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "8.3%1/",
+          "x0": 380.7199,
+          "x1": 404.1074,
+          "row_id": 40,
+          "top": 432.4808,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "90%",
+          "x0": 524.0,
+          "x1": 541.0085,
+          "row_id": 41,
+          "top": 433.96999999999997,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "Ofcotton(359)..........................................................",
+          "x0": 153.92,
+          "x1": 333.51863349999996,
+          "row_id": 45,
+          "top": 474.77000000000004,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "30",
+          "x0": 95.71409999999999,
+          "x1": 105.16609999999999,
+          "row_id": 50,
+          "top": 523.97,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "Other(859)................................................................",
+          "x0": 153.92,
+          "x1": 333.5191945,
+          "row_id": 50,
+          "top": 523.97,
+          "band": "DESC_BAND"
+        }
+      ]
+    },
+    {
+      "event": "BASE_FOUND",
+      "row": 12,
+      "base": "6112.20.10",
+      "normalized": "61122010",
+      "duty_captured": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 18,
+      "base": "6112.20.10",
+      "suffix": "10",
+      "code": "6112.20.10.10",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 20,
+      "base": "6112.20.10",
+      "suffix": "20",
+      "code": "6112.20.10.20",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 24,
+      "base": "6112.20.10",
+      "suffix": "30",
+      "code": "6112.20.10.30",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 26,
+      "base": "6112.20.10",
+      "suffix": "40",
+      "code": "6112.20.10.40",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 28,
+      "base": "6112.20.10",
+      "suffix": "50",
+      "code": "6112.20.10.50",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 31,
+      "base": "6112.20.10",
+      "suffix": "60",
+      "code": "6112.20.10.60",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 33,
+      "base": "6112.20.10",
+      "suffix": "70",
+      "code": "6112.20.10.70",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 36,
+      "base": "6112.20.10",
+      "suffix": "80",
+      "code": "6112.20.10.80",
+      "duty_from_base": true
+    },
+    {
+      "event": "SPECIAL_DUTY_DEBUG_90",
+      "row": 38,
+      "code": "6112.20.10.90",
+      "base": "6112.20.10",
+      "duty_special": "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "special_band_info": {
+        "section_special_band": null,
+        "row_tokens_in_special_band": [],
+        "special_candidates_found": false,
+        "base_row_duty": [
+          "28.2%",
+          "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+          "72%"
+        ]
+      }
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 38,
+      "base": "6112.20.10",
+      "suffix": "90",
+      "code": "6112.20.10.90",
+      "duty_from_base": true
+    },
+    {
+      "event": "BASE_FOUND",
+      "row": 41,
+      "base": "6112.20.20",
+      "normalized": "61122020",
+      "duty_captured": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 45,
+      "base": "6112.20.20",
+      "suffix": "10",
+      "code": "6112.20.20.10",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 47,
+      "base": "6112.20.20",
+      "suffix": "20",
+      "code": "6112.20.20.20",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 50,
+      "base": "6112.20.20",
+      "suffix": "30",
+      "code": "6112.20.20.30",
+      "duty_from_base": true
+    }
+  ],
+  "state_machine_events": [
+    {
+      "event": "SECTION_BAND_SHIFT",
+      "base": "6112.20.20",
+      "dx": -0.0004500000000007276,
+      "general_band_shifted": [
+        379.7199,
+        409.83295
+      ],
+      "special_band_shifted": null,
+      "col2_band_shifted": [
+        523.0,
+        542.0085
+      ],
+      "col2_90_matches": 1
+    },
+    {
+      "event": "BAND_CALIBRATION",
+      "general_band_6112_20_10": [
+        379.72035,
+        409.8334
+      ],
+      "special_band_6112_20_10": null,
+      "column2_band_6112_20_10": [
+        523.00045,
+        542.00895
+      ],
+      "calibration_rows": 1,
+      "col2_90_matches": [
+        {
+          "x0": 524.0,
+          "x1": 541.0085,
+          "row_id": 41,
+          "top": 433.96999999999997,
+          "text": "90%",
+          "band": "DUTY_BAND"
+        }
+      ],
+      "pct_83_candidates": [
+        {
+          "text": "28.2%1/",
+          "x0": 380.72035,
+          "x1": 408.8334,
+          "row_id": 12,
+          "top": 128.88080000000002,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "72%",
+          "x0": 524.00045,
+          "x1": 541.00895,
+          "row_id": 12,
+          "top": 130.37,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "Men'sorboys'(634)..........................................",
+          "x0": 168.32,
+          "x1": 333.517058,
+          "row_id": 18,
+          "top": 191.57000000000005,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(635).....................................",
+          "x0": 168.32010000000002,
+          "x1": 333.51709850000003,
+          "row_id": 20,
+          "top": 216.1700000000002,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "30",
+          "x0": 95.71430000000007,
+          "x1": 105.16630000000006,
+          "row_id": 24,
+          "top": 257.1700000000004,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "Men'sorboys'(634)...................................",
+          "x0": 182.72020000000006,
+          "x1": 333.5192185000001,
+          "row_id": 24,
+          "top": 257.1700000000004,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(635)..............................",
+          "x0": 182.72030000000007,
+          "x1": 333.5192505000001,
+          "row_id": 26,
+          "top": 281.7700000000005,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "Women'sorgirls'(648).....................................",
+          "x0": 168.32010000000002,
+          "x1": 333.51709850000003,
+          "row_id": 33,
+          "top": 357.77,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "80",
+          "x0": 95.71430000000005,
+          "x1": 105.16630000000005,
+          "row_id": 36,
+          "top": 388.56999999999994,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "8.3%1/",
+          "x0": 380.7199,
+          "x1": 404.1074,
+          "row_id": 40,
+          "top": 432.4808,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "90%",
+          "x0": 524.0,
+          "x1": 541.0085,
+          "row_id": 41,
+          "top": 433.96999999999997,
+          "band": "DUTY_BAND"
+        },
+        {
+          "text": "Ofcotton(359)..........................................................",
+          "x0": 153.92,
+          "x1": 333.51863349999996,
+          "row_id": 45,
+          "top": 474.77000000000004,
+          "band": "DESC_BAND"
+        },
+        {
+          "text": "30",
+          "x0": 95.71409999999999,
+          "x1": 105.16609999999999,
+          "row_id": 50,
+          "top": 523.97,
+          "band": "SUFFIX_BAND"
+        },
+        {
+          "text": "Other(859)................................................................",
+          "x0": 153.92,
+          "x1": 333.5191945,
+          "row_id": 50,
+          "top": 523.97,
+          "band": "DESC_BAND"
+        }
+      ]
+    },
+    {
+      "event": "BASE_FOUND",
+      "row": 12,
+      "base": "6112.20.10",
+      "normalized": "61122010",
+      "duty_captured": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 18,
+      "base": "6112.20.10",
+      "suffix": "10",
+      "code": "6112.20.10.10",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 20,
+      "base": "6112.20.10",
+      "suffix": "20",
+      "code": "6112.20.10.20",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 24,
+      "base": "6112.20.10",
+      "suffix": "30",
+      "code": "6112.20.10.30",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 26,
+      "base": "6112.20.10",
+      "suffix": "40",
+      "code": "6112.20.10.40",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 28,
+      "base": "6112.20.10",
+      "suffix": "50",
+      "code": "6112.20.10.50",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 31,
+      "base": "6112.20.10",
+      "suffix": "60",
+      "code": "6112.20.10.60",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 33,
+      "base": "6112.20.10",
+      "suffix": "70",
+      "code": "6112.20.10.70",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 36,
+      "base": "6112.20.10",
+      "suffix": "80",
+      "code": "6112.20.10.80",
+      "duty_from_base": true
+    },
+    {
+      "event": "SPECIAL_DUTY_DEBUG_90",
+      "row": 38,
+      "code": "6112.20.10.90",
+      "base": "6112.20.10",
+      "duty_special": "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+      "special_band_info": {
+        "section_special_band": null,
+        "row_tokens_in_special_band": [],
+        "special_candidates_found": false,
+        "base_row_duty": [
+          "28.2%",
+          "Free(AU,BH,CL,CO,IL,JO,KR, MA,OM,P,PA, PE,S,SG)",
+          "72%"
+        ]
+      }
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 38,
+      "base": "6112.20.10",
+      "suffix": "90",
+      "code": "6112.20.10.90",
+      "duty_from_base": true
+    },
+    {
+      "event": "BASE_FOUND",
+      "row": 41,
+      "base": "6112.20.20",
+      "normalized": "61122020",
+      "duty_captured": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 45,
+      "base": "6112.20.20",
+      "suffix": "10",
+      "code": "6112.20.20.10",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 47,
+      "base": "6112.20.20",
+      "suffix": "20",
+      "code": "6112.20.20.20",
+      "duty_from_base": true
+    },
+    {
+      "event": "CODE_EMITTED",
+      "row": 50,
+      "base": "6112.20.20",
+      "suffix": "30",
+      "code": "6112.20.20.30",
+      "duty_from_base": true
+    }
+  ],
+  "total_codes": 14,
+  "codes_by_level": {
+    "6": 0,
+    "8": 2,
+    "10": 12
+  }
+}
