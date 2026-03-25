@@ -157,7 +157,7 @@ class AnalysisOrchestrationService:
 
         # If RUNNING for too long, treat as stale so Re-run can start a fresh analysis (short window so user isn't stuck)
         if not force_new and existing_analysis:
-            STALE_RUNNING_MINUTES = 1
+            STALE_RUNNING_MINUTES = 5
             if (
                 existing_analysis.status == AnalysisStatus.RUNNING
                 and existing_analysis.started_at
@@ -232,6 +232,8 @@ class AnalysisOrchestrationService:
             repo = OrgScopedRepository(self.db, Shipment)
             shipment = await repo.get_by_id(shipment_id, organization_id)
             await self.db.refresh(shipment, ["items"])
+            from app.services.analysis_pipeline import build_analysis_provenance
+
             minimal_result = {
                 "shipment_id": str(shipment_id),
                 "items": [
@@ -251,6 +253,7 @@ class AnalysisOrchestrationService:
                 "review_status": "DRAFT",
                 "generated_at": datetime.utcnow().isoformat(),
                 "mode": "INSTANT_DEV",
+                "analysis_provenance": build_analysis_provenance(analysis_path="instant_dev", pipeline_mode="INSTANT_DEV"),
             }
             analysis.status = AnalysisStatus.COMPLETE
             analysis.started_at = analysis.started_at or datetime.utcnow()
@@ -301,12 +304,6 @@ class AnalysisOrchestrationService:
                     await self.db.commit()
                 except Exception as e:
                     logger.exception("Sync analysis failed: %s", e)
-                    # #region agent log
-                    import json
-                    _log_path = "/Users/stevenbigio/Cursor Projects/NECO/logs/debug_analysis_aa7c8f.log"
-                    with open(_log_path, "a") as _f:
-                        _f.write(json.dumps({"sessionId":"aa7c8f","location":"orchestration:sync_exception","message":"Sync analysis exception","data":{"error":str(e)[:300],"error_type":type(e).__name__},"hypothesisId":"H6","timestamp":int(__import__("time").time()*1000)}) + "\n")
-                    # #endregion
                     # Clear shipment.status from ANALYZING if stuck (task may have set it before raising)
                     repo = OrgScopedRepository(self.db, Shipment)
                     shipment = await repo.get_by_id(shipment_id, organization_id)
@@ -399,6 +396,24 @@ class AnalysisOrchestrationService:
                     "reviewed_at": review_record.reviewed_at.isoformat() if review_record.reviewed_at else None
                 }
         
+        from app.services.analysis_pipeline import build_analysis_provenance
+
+        if (
+            analysis.status == AnalysisStatus.COMPLETE
+            and analysis.result_json
+            and isinstance(analysis.result_json, dict)
+            and analysis.result_json.get("analysis_provenance")
+        ):
+            dev_ctx = dict(analysis.result_json["analysis_provenance"])
+        else:
+            tid = analysis.celery_task_id or ""
+            apath = "celery"
+            if tid.startswith("inline-"):
+                apath = "sync_inline"
+            elif tid.startswith("instant-"):
+                apath = "instant_dev"
+            dev_ctx = build_analysis_provenance(analysis_path=apath)
+
         payload = {
             "analysis_id": str(analysis.id),
             "status": analysis.status.value,
@@ -413,6 +428,8 @@ class AnalysisOrchestrationService:
             "review_record": review_record_info,
             "has_result": analysis.result_json is not None,
         }
+        if settings.ENVIRONMENT.lower() in {"development", "dev", "local"}:
+            payload["dev_context"] = dev_ctx
         if analysis.result_json is not None:
             payload["result_json"] = analysis.result_json
         return payload

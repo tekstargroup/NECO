@@ -18,14 +18,19 @@ CBP_CROSS now parses the XML export format (`ArrayOfRulingExport` / `RulingExpor
 To automate (no manual download):
 
 1. Go to **https://rulings.cbp.gov/**
-2. Find the **"What's New"** section (left side)
-3. Under **"All Latest Rulings"**, right-click the **XML** button
-4. Choose **Copy link address**
+2. Find **"What's New"** → **"All Latest Rulings"**
+3. **Option A:** Right-click the **XML** control → **Copy link** (if your browser shows it).  
+4. **Option B:** Open **Inspect** → **Network** → click **XML** on the page → copy **Request URL** from that request.
 5. Add to `backend/.env`:
    ```
    CBP_CROSS_XML_URL=<paste the URL here>
    ```
-6. Remove or comment out `CBP_CROSS_LOCAL_FILE` once the URL works
+   The URL usually looks like:  
+   `https://rulings.cbp.gov/api/stat/recentRulings?format=xml&collection=`  
+   (**`collection=`** empty is correct for “all latest”; `collection=ALL` returns an empty feed.)
+6. Remove or comment out `CBP_CROSS_LOCAL_FILE` once the URL works.
+
+**Note:** NECO uses a browser-like `User-Agent` for this host only — CBP returns an empty XML list for custom/bot user agents.
 
 ---
 

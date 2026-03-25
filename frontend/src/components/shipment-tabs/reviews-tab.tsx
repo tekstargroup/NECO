@@ -38,6 +38,7 @@ interface ReviewDetail {
     outcome: string
     explanation_text: string
   }>
+  item_decisions?: Record<string, { status?: string; notes?: string | null; updated_at?: string }>
 }
 
 const REVIEW_REQUIRED = "REVIEW_REQUIRED"
@@ -56,13 +57,15 @@ function _regulatoryGuidance(regulator: string): string {
   return "What it means: this line may need additional compliance verification. What NECO needs: clearer product and origin details. What to share with broker/importer: relevant product documentation."
 }
 
-function _reframeReason(raw: string | undefined, altHts: string | undefined): string {
+function _reframeReason(raw: string | undefined, altHts: string | undefined, isPreCompliance = false): string {
   const s = (raw || "").trim()
   if (
     altHts &&
     /no alternative|no plausible classifications|no good match|no confident match/i.test(s)
   ) {
-    return "Alternative HTS identified from available document evidence. Review before export."
+    return isPreCompliance
+      ? "Likely HS code suggestion identified from available document evidence."
+      : "Alternative HTS identified from available document evidence. Review before export."
   }
   if (/could not resolve|couldn't resolve|unable to resolve|failed to resolve/i.test(s)) {
     return altHts
@@ -71,11 +74,16 @@ function _reframeReason(raw: string | undefined, altHts: string | undefined): st
   }
   if (s && s.length <= 120) return s
   if (s) return s.slice(0, 117) + "…"
-  return altHts ? "Alternative HTS identified for review." : "Review recommended."
+  return altHts
+    ? (isPreCompliance ? "Likely HS code suggestion identified for review." : "Alternative HTS identified for review.")
+    : "Review recommended."
 }
 
 export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId: string }) {
   const { apiGet, apiPost, apiPatch } = useApiClient()
+  const shipmentTypeRef = (shipment?.references || []).find((r: any) => String(r?.key || "").toUpperCase() === "SHIPMENT_TYPE")
+  const shipmentType = String(shipmentTypeRef?.value || "PRE_COMPLIANCE").toUpperCase()
+  const isPreCompliance = shipmentType !== "ENTRY_COMPLIANCE"
   const [reviews, setReviews] = useState<ReviewListItem[]>([])
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null)
   const [reviewDetail, setReviewDetail] = useState<ReviewDetail | null>(null)
@@ -84,6 +92,7 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
   const [rejectNotes, setRejectNotes] = useState("")
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedItemIndex, setExpandedItemIndex] = useState<number | null>(null)
@@ -94,8 +103,9 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
       const status = await apiGet<any>(`/api/v1/shipments/${shipmentId}/analysis-status`)
       setAnalysisData(status)
     } catch (e: unknown) {
+      setAnalysisData(null)
       if ((e as { status?: number })?.status !== 404) {
-        setAnalysisData(null)
+        setError("Could not load analysis data for comparison")
       }
     }
   }, [apiGet, shipmentId])
@@ -121,12 +131,16 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
 
   const loadReviewDetail = async (reviewId: string) => {
     setError(null)
+    setDetailLoading(true)
+    setReviewDetail(null)
     try {
       const detail = await apiGet<ReviewDetail>(`/api/v1/reviews/${reviewId}`)
       setReviewDetail(detail)
     } catch (e: unknown) {
       setError(formatApiError(e as ApiClientError) || "Failed to load review detail")
       setReviewDetail(null)
+    } finally {
+      setDetailLoading(false)
     }
   }
 
@@ -212,9 +226,27 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
 
   const canAcceptReject = reviewDetail?.status === REVIEW_REQUIRED
 
-  // Build items to review from analysis data (same view model as Analysis tab)
-  const items = analysisData?.result_json?.items || []
-  const blockers = analysisData?.result_json?.blockers || []
+  // Use review snapshot (what was approved) when available; fall back to live analysis
+  const snapshotItems = reviewDetail?.snapshot_json?.items
+  const items = snapshotItems || analysisData?.result_json?.items || []
+  const blockers = (reviewDetail?.snapshot_json?.blockers) || analysisData?.result_json?.blockers || []
+  const usingSnapshot = Boolean(snapshotItems)
+  const persistItemDecision = async (itemId: string, status: "accepted" | "rejected" | "pending") => {
+    if (!selectedReviewId || !itemId) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await apiPatch(`/api/v1/reviews/${selectedReviewId}/item-decisions`, {
+        decisions: { [itemId]: { status, notes: null } },
+      })
+      await loadReviewDetail(selectedReviewId)
+    } catch (e: unknown) {
+      setError(formatApiError(e as ApiClientError) || "Failed to save line decision")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const viewItems = items.map((item: any, idx: number) => {
     const pscAlts = item.psc?.alternatives || []
     const candidates = item.classification?.candidates || []
@@ -232,17 +264,24 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
     const estimatedSavings = deltaAmount != null && deltaAmount > 0 ? deltaAmount : (altEst != null ? altEst : 0)
     return {
       index: idx,
+      id: item.id ? String(item.id) : "",
       productName: item.label || `Item ${idx + 1}`,
       declaredHts: item.hts_code || "—",
+      hasDeclaredHts: Boolean(item.hts_code),
       recommendedHts: altHts,
       estimatedSavings,
-      shortReason: _reframeReason(item.psc?.summary, altHts),
+      shortReason: _reframeReason(item.psc?.summary, altHts, isPreCompliance),
       confidence: item.classification?.metadata?.analysis_confidence ?? 0.6,
       risk: blockers.length > 0 ? "Medium" : "Low",
+      classificationMemo: item.classification_memo,
     }
-  }).filter((vi: any) => vi.recommendedHts || vi.estimatedSavings > 0)
+  }).filter((vi: any) => {
+    const ALWAYS_VISIBLE_LEVELS = ["no_classification", "needs_input", "insufficient_support"]
+    return vi.recommendedHts || vi.estimatedSavings > 0 || ALWAYS_VISIBLE_LEVELS.includes(vi.classificationMemo?.support_level)
+  })
 
   const totalSavings = viewItems.reduce((s: number, i: any) => s + (i.estimatedSavings || 0), 0)
+  const hasAnyDeclaredHts = viewItems.some((i: any) => i.hasDeclaredHts)
   const safeItems = viewItems.filter((i: any) => i.risk !== "Medium")
 
   useEffect(() => {
@@ -276,6 +315,8 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
             <p className="text-sm text-muted-foreground">Loading reviews...</p>
           ) : reviews.length === 0 ? (
             <p className="text-sm text-muted-foreground">No review record. Run analysis to create one.</p>
+          ) : detailLoading ? (
+            <p className="text-sm text-muted-foreground">Loading review details...</p>
           ) : reviewDetail ? (
             <>
               <div className="flex items-center gap-2">
@@ -284,6 +325,12 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
               </div>
               {reviewDetail.status === REVIEW_REQUIRED && (
                 <p className="text-sm text-amber-800">Export is blocked until review is complete.</p>
+              )}
+              {usingSnapshot && analysisData?.result_json?.generated_at && reviewDetail.snapshot_json?.generated_at &&
+                analysisData.result_json.generated_at !== reviewDetail.snapshot_json.generated_at && (
+                <p className="text-xs text-amber-600 border border-amber-200 bg-amber-50 rounded px-2 py-1 mt-1">
+                  Analysis has changed since this review was created. Items shown are from the review snapshot.
+                </p>
               )}
 
               {canAcceptReject && (
@@ -350,7 +397,12 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
       {canAcceptReject && viewItems.length === 0 && items.length > 0 && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">No alternative classifications identified. Declared HTS appears consistent. You can Accept to clear the review.</p>
+            <p className="text-sm text-muted-foreground">
+              {hasAnyDeclaredHts
+                ? "No alternative classifications identified. Declared HTS appears consistent. You can Accept to clear the review."
+                : "No declared HTS was provided for comparison. You can Accept to clear the review."
+              }
+            </p>
           </CardContent>
         </Card>
       )}
@@ -359,7 +411,7 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
           <CardHeader>
             <CardTitle>Items to Review ({viewItems.length})</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {totalSavings > 0 ? `Potential savings: $${totalSavings.toLocaleString()}. ` : ""}
+              {!isPreCompliance && totalSavings > 0 ? `Potential savings: $${totalSavings.toLocaleString()}. ` : ""}
               Review each flagged line below before accepting or rejecting this shipment.
             </p>
             {safeItems.length > 0 && (
@@ -367,13 +419,30 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
+                  disabled={submitting || !selectedReviewId}
+                  onClick={async () => {
                     const updates: Record<number, "accept" | "override" | "leave"> = {}
                     safeItems.forEach((item: any) => { updates[item.index] = "accept" })
                     setLineDecisions((prev) => ({ ...prev, ...updates }))
+                    setSubmitting(true)
+                    setError(null)
+                    try {
+                      const decisions: Record<string, { status: string; notes: null }> = {}
+                      safeItems.forEach((item: any) => {
+                        if (item.id) decisions[item.id] = { status: "accepted", notes: null }
+                      })
+                      if (Object.keys(decisions).length > 0) {
+                        await apiPatch(`/api/v1/reviews/${selectedReviewId}/item-decisions`, { decisions })
+                        await loadReviewDetail(selectedReviewId!)
+                      }
+                    } catch (e: unknown) {
+                      setError(formatApiError(e as ApiClientError) || "Failed to accept safe items")
+                    } finally {
+                      setSubmitting(false)
+                    }
                   }}
                 >
-                  Accept all safe items
+                  {submitting ? "Saving..." : "Accept all safe items"}
                 </Button>
               </div>
             )}
@@ -385,8 +454,8 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
                   <tr>
                     <th className="px-4 py-2 text-left font-medium">Item</th>
                     <th className="px-4 py-2 text-left font-medium">Declared HTS</th>
-                    <th className="px-4 py-2 text-left font-medium">Alternative HTS identified</th>
-                    <th className="px-4 py-2 text-right font-medium">Est. Savings</th>
+                    <th className="px-4 py-2 text-left font-medium">{isPreCompliance ? "Likely HS code suggestion" : "Alternative HTS identified"}</th>
+                    {!isPreCompliance && <th className="px-4 py-2 text-right font-medium">Est. Savings</th>}
                     <th className="px-4 py-2 text-left font-medium">Why this was flagged</th>
                   </tr>
                 </thead>
@@ -400,42 +469,71 @@ export function ReviewsTab({ shipment, shipmentId }: { shipment: any; shipmentId
                       <td className="px-4 py-3 font-medium">{vi.productName}</td>
                       <td className="px-4 py-3 font-mono text-xs">{vi.declaredHts}</td>
                       <td className="px-4 py-3 font-mono text-xs font-medium">{vi.recommendedHts || "—"}</td>
-                      <td className="px-4 py-3 text-right font-semibold">{vi.estimatedSavings > 0 ? `$${vi.estimatedSavings.toLocaleString()}` : "—"}</td>
+                      {!isPreCompliance && (
+                        <td className="px-4 py-3 text-right font-semibold">{vi.estimatedSavings > 0 ? `$${vi.estimatedSavings.toLocaleString()}` : "—"}</td>
+                      )}
                       <td className="px-4 py-3 text-muted-foreground max-w-[280px]">{vi.shortReason}</td>
                     </tr>
                     {expandedItemIndex === vi.index && (
                       <tr className="border-t bg-muted/20">
-                        <td colSpan={5} className="px-4 py-3">
+                        <td colSpan={isPreCompliance ? 4 : 5} className="px-4 py-3">
                           <div className="space-y-2 text-sm">
                             <p><strong>Why NECO surfaced this:</strong> {vi.shortReason}</p>
-                            <p><strong>Evidence strength:</strong> {vi.confidence >= 0.7 ? "High" : vi.confidence >= 0.5 ? "Moderate" : "Low"}</p>
+                            <p>
+                              <strong>Classification memo:</strong>{" "}
+                              {vi.classificationMemo?.support_label || "—"}
+                            </p>
+                            {vi.classificationMemo?.summary && (
+                              <p className="text-muted-foreground">{vi.classificationMemo.summary}</p>
+                            )}
+                            <p>
+                              <strong>Model evidence strength:</strong>{" "}
+                              {vi.confidence >= 0.7 ? "Higher" : vi.confidence >= 0.5 ? "Moderate" : "Lower"}
+                            </p>
                             <p><strong>Review level:</strong> {vi.risk}</p>
+                            {vi.id && reviewDetail?.item_decisions?.[vi.id]?.status && (
+                              <p className="text-xs text-muted-foreground">
+                                Saved line status: {reviewDetail.item_decisions[vi.id].status}
+                              </p>
+                            )}
                             <div className="flex flex-wrap gap-2 pt-1">
                               <Button
                                 size="sm"
                                 variant={lineDecisions[vi.index] === "accept" ? "default" : "outline"}
-                                onClick={() => setLineDecisions((prev) => ({ ...prev, [vi.index]: "accept" }))}
+                                onClick={() => {
+                                  setLineDecisions((prev) => ({ ...prev, [vi.index]: "accept" }))
+                                  if (vi.id) void persistItemDecision(vi.id, "accepted")
+                                }}
+                                disabled={submitting || !vi.id}
                               >
                                 Accept this line
                               </Button>
                               <Button
                                 size="sm"
                                 variant={lineDecisions[vi.index] === "override" ? "default" : "outline"}
-                                onClick={() => setLineDecisions((prev) => ({ ...prev, [vi.index]: "override" }))}
+                                onClick={() => {
+                                  setLineDecisions((prev) => ({ ...prev, [vi.index]: "override" }))
+                                  if (vi.id) void persistItemDecision(vi.id, "rejected")
+                                }}
+                                disabled={submitting || !vi.id}
                               >
                                 Override this line
                               </Button>
                               <Button
                                 size="sm"
                                 variant={lineDecisions[vi.index] === "leave" ? "default" : "outline"}
-                                onClick={() => setLineDecisions((prev) => ({ ...prev, [vi.index]: "leave" }))}
+                                onClick={() => {
+                                  setLineDecisions((prev) => ({ ...prev, [vi.index]: "leave" }))
+                                  if (vi.id) void persistItemDecision(vi.id, "pending")
+                                }}
+                                disabled={submitting || !vi.id}
                               >
                                 Leave this line
                               </Button>
                             </div>
                             {lineDecisions[vi.index] && (
                               <p className="text-xs text-[#334155]">
-                                Selected action: <strong>{lineDecisions[vi.index]}</strong>. This is saved for this review session and can be changed anytime.
+                                Selected action: <strong>{lineDecisions[vi.index]}</strong>. This decision is saved and can be changed anytime before final review.
                               </p>
                             )}
                             <p className="text-muted-foreground">

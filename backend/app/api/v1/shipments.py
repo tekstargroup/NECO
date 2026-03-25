@@ -24,6 +24,7 @@ from app.models.user import User
 from app.models.organization import Organization
 from app.models.shipment import Shipment, ShipmentStatus, ShipmentReference, ShipmentItem
 from app.models.shipment_document import ShipmentDocument
+from app.models.shipment_item_document import ShipmentItemDocument, ItemDocumentMappingStatus
 from app.models.analysis import Analysis
 from app.models.review_record import ReviewRecord
 from app.repositories.org_scoped_repository import OrgScopedRepository
@@ -488,6 +489,56 @@ class SupplementalEvidenceRequest(BaseModel):
     document_id: Optional[UUID] = Field(None, description="Shipment document ID (required when type=document)")
 
 
+class ShipmentItemUpdateRequest(BaseModel):
+    """Patch shipment item fields used for pre-compliance clarifications."""
+    country_of_origin: Optional[str] = Field(
+        None,
+        description="ISO 3166-1 alpha-2 country code (e.g. US, CN, MX). Use null/empty to clear.",
+    )
+
+    @validator("country_of_origin")
+    def validate_country_of_origin(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        if len(s) != 2 or not s.isalpha():
+            raise ValueError("country_of_origin must be a 2-letter ISO code")
+        return s.upper()
+
+
+@router.patch("/{shipment_id}/items/{item_id}", status_code=status.HTTP_200_OK)
+async def update_shipment_item(
+    shipment_id: UUID,
+    item_id: UUID,
+    body: ShipmentItemUpdateRequest,
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update shipment item clarifications (MVP: country_of_origin).
+    Used by pre-compliance flow to strengthen likely HS code determination.
+    """
+    repo = OrgScopedRepository(db, Shipment)
+    shipment = await repo.get_by_id(shipment_id, current_org.id)
+    await db.refresh(shipment, ["items"])
+
+    item = next((i for i in shipment.items if i.id == item_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Line item not found")
+
+    item.country_of_origin = body.country_of_origin
+    await db.commit()
+    await db.refresh(item)
+    return {
+        "item_id": str(item.id),
+        "country_of_origin": item.country_of_origin,
+        "message": "Line item updated. Re-run analysis to refresh likely HS code confidence."
+    }
+
+
 @router.post("/{shipment_id}/items/{item_id}/supplemental-evidence", status_code=status.HTTP_200_OK)
 async def add_supplemental_evidence(
     shipment_id: UUID,
@@ -518,7 +569,9 @@ async def add_supplemental_evidence(
         if not is_valid_amazon_url(body.amazon_url):
             raise HTTPException(status_code=400, detail="Invalid Amazon URL. Use a product page like https://www.amazon.com/dp/...")
 
-        result = scrape_amazon_product(body.amazon_url)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, scrape_amazon_product, body.amazon_url)
         if result.get("error"):
             raise HTTPException(status_code=422, detail=result["error"])
         if not result.get("full_text"):
@@ -595,9 +648,9 @@ async def upload_supplemental_evidence_pdf(
     if len(content) > 10 * 1024 * 1024:  # 10MB limit
         raise HTTPException(status_code=400, detail="File too large (max 10MB)")
 
-    try:
+    def _extract_pdf_text(content_bytes: bytes) -> str:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp.write(content)
+            tmp.write(content_bytes)
             tmp_path = Path(tmp.name)
         try:
             with pdfplumber.open(tmp_path) as pdf:
@@ -606,9 +659,13 @@ async def upload_supplemental_evidence_pdf(
                     text = page.extract_text()
                     if text and text.strip():
                         parts.append(text.strip())
-                extracted = "\n\n".join(parts) if parts else ""
+                return "\n\n".join(parts) if parts else ""
         finally:
             tmp_path.unlink(missing_ok=True)
+
+    try:
+        import asyncio
+        extracted = await asyncio.get_event_loop().run_in_executor(None, _extract_pdf_text, content)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Could not extract text from PDF: {str(e)[:200]}")
 
@@ -802,12 +859,26 @@ async def start_shipment_analysis(
     logger.info("POST /analyze shipment_id=%s force_new=%s", shipment_id, force_new)
 
     try:
-        # #region agent log
-        import json
-        _log_path = "/Users/stevenbigio/Cursor Projects/NECO/logs/debug_analysis_aa7c8f.log"
-        with open(_log_path, "a") as _f:
-            _f.write(json.dumps({"sessionId":"aa7c8f","location":"shipments.py:analyze:entry","message":"Analyze endpoint hit","data":{"shipment_id":str(shipment_id),"force_new":force_new},"hypothesisId":"H4","timestamp":int(__import__("time").time()*1000)}) + "\n")
-        # #endregion
+        # Enforce mandatory COO for Pre-Compliance before running analysis when shipment has line items.
+        repo = OrgScopedRepository(db, Shipment)
+        shipment = await repo.get_by_id(shipment_id, current_org.id)
+        await db.refresh(shipment, ["references", "items"])
+        ref_map = {str(ref.reference_type).upper(): str(ref.reference_value).upper() for ref in (shipment.references or [])}
+        shipment_type = ref_map.get("SHIPMENT_TYPE", "PRE_COMPLIANCE")
+        is_pre_compliance = shipment_type != "ENTRY_COMPLIANCE"
+        if is_pre_compliance and (shipment.items or []):
+            missing_coo = [it for it in shipment.items if not (it.country_of_origin and str(it.country_of_origin).strip())]
+            if missing_coo:
+                missing_names = [it.label or f"Line item {idx + 1}" for idx, it in enumerate(missing_coo)]
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        "Country of Origin is required for all pre-compliance line items before analysis can run. "
+                        f"Missing COO for: {', '.join(missing_names[:5])}"
+                        + (f" (+{len(missing_names)-5} more)" if len(missing_names) > 5 else "")
+                    ),
+                )
+
         orchestration_service = AnalysisOrchestrationService(db)
         clarification_responses = request_body.clarification_responses if request_body else None
         result = await orchestration_service.start_analysis(
@@ -817,24 +888,15 @@ async def start_shipment_analysis(
             force_new=force_new,
             clarification_responses=clarification_responses,
         )
-        # #region agent log
-        with open(_log_path, "a") as _f:
-            _f.write(json.dumps({"sessionId":"aa7c8f","location":"shipments.py:analyze:result","message":"Orchestration result","data":{"status":result.get("status"),"sync":result.get("sync"),"has_result_json":result.get("result_json") is not None,"items_count":len((result.get("result_json") or {}).get("items") or [])},"hypothesisId":"H1,H3","timestamp":int(__import__("time").time()*1000)}) + "\n")
-        # #endregion
         if result.get("sync"):
             return JSONResponse(status_code=status.HTTP_200_OK, content=result)
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=result)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Analyze endpoint failed: %s", e)
-        # #region agent log
-        import json
-        _log_path = "/Users/stevenbigio/Cursor Projects/NECO/logs/debug_analysis_aa7c8f.log"
-        with open(_log_path, "a") as _f:
-            _f.write(json.dumps({"sessionId":"aa7c8f","location":"shipments.py:analyze:exception","message":"Analyze endpoint exception","data":{"error":str(e)[:200]},"hypothesisId":"H3","timestamp":int(__import__("time").time()*1000)}) + "\n")
-        # #endregion
-        # Always return 200 with a body so the frontend can show an error instead of "nothing"
         return JSONResponse(
-            status_code=status.HTTP_200_OK,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "sync": True,
                 "status": "FAILED",
@@ -909,3 +971,125 @@ async def get_analysis_status(
     )
     
     return result
+
+
+@router.get("/{shipment_id}/trust-workflow")
+async def get_shipment_trust_workflow(
+    shipment_id: UUID,
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db),
+):
+    """Derived trust states for documents, items, analysis, and review (Sprint A)."""
+    from app.services.trust_workflow_service import TrustWorkflowService
+
+    repo = OrgScopedRepository(db, Shipment)
+    await repo.get_by_id(shipment_id, current_org.id)
+    svc = TrustWorkflowService(db)
+    return await svc.compute_trust_workflow(shipment_id, current_org.id)
+
+
+class ItemDocumentLinkCreateRequest(BaseModel):
+    shipment_item_id: UUID
+    shipment_document_id: UUID
+    mapping_status: Optional[str] = Field(
+        default=ItemDocumentMappingStatus.USER_CONFIRMED,
+        description="AUTO | USER_CONFIRMED | REJECTED",
+    )
+
+
+@router.post("/{shipment_id}/item-document-links", status_code=status.HTTP_201_CREATED)
+async def create_item_document_link(
+    shipment_id: UUID,
+    body: ItemDocumentLinkCreateRequest,
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a shipment document to a line item (explicit evidence mapping, Sprint C)."""
+    repo = OrgScopedRepository(db, Shipment)
+    await repo.get_by_id(shipment_id, current_org.id)
+
+    status_val = (body.mapping_status or ItemDocumentMappingStatus.USER_CONFIRMED).strip().upper()
+    if status_val not in (
+        ItemDocumentMappingStatus.AUTO,
+        ItemDocumentMappingStatus.USER_CONFIRMED,
+        ItemDocumentMappingStatus.REJECTED,
+    ):
+        raise HTTPException(status_code=400, detail="Invalid mapping_status")
+
+    item_r = await db.execute(
+        select(ShipmentItem).where(
+            and_(
+                ShipmentItem.id == body.shipment_item_id,
+                ShipmentItem.shipment_id == shipment_id,
+            )
+        )
+    )
+    item = item_r.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Shipment item not found")
+
+    doc_r = await db.execute(
+        select(ShipmentDocument).where(
+            and_(
+                ShipmentDocument.id == body.shipment_document_id,
+                ShipmentDocument.shipment_id == shipment_id,
+                ShipmentDocument.organization_id == current_org.id,
+            )
+        )
+    )
+    doc = doc_r.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    link = ShipmentItemDocument(
+        shipment_id=shipment_id,
+        organization_id=current_org.id,
+        shipment_item_id=body.shipment_item_id,
+        shipment_document_id=body.shipment_document_id,
+        mapping_status=status_val,
+    )
+    db.add(link)
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Could not create link (duplicate or invalid reference)",
+        )
+    await db.refresh(link)
+    return {
+        "id": str(link.id),
+        "shipment_id": str(shipment_id),
+        "shipment_item_id": str(link.shipment_item_id),
+        "shipment_document_id": str(link.shipment_document_id),
+        "mapping_status": link.mapping_status,
+    }
+
+
+@router.delete("/{shipment_id}/item-document-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item_document_link(
+    shipment_id: UUID,
+    link_id: UUID,
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = OrgScopedRepository(db, Shipment)
+    await repo.get_by_id(shipment_id, current_org.id)
+    lr = await db.execute(
+        select(ShipmentItemDocument).where(
+            and_(
+                ShipmentItemDocument.id == link_id,
+                ShipmentItemDocument.shipment_id == shipment_id,
+                ShipmentItemDocument.organization_id == current_org.id,
+            )
+        )
+    )
+    row = lr.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Link not found")
+    await db.delete(row)
+    await db.commit()

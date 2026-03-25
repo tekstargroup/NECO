@@ -2,7 +2,7 @@
 
 **Purpose:** Clear split of what is done, what you run, and what the AI executes. This is the MOAT — compliance intelligence from external signals.
 
-**Last updated:** March 17, 2026
+**Last updated:** March 24, 2026
 
 ---
 
@@ -37,7 +37,7 @@ The full pipeline is in the codebase:
 | **1** | CBP CROSS rulings | Scrape | ✅ |
 | **2** | OFAC Recent Actions | Scrape | ✅ |
 | **2** | FDA Import Alerts | Scrape | ✅ |
-| **2** | USDA FSIS | RSS | ✅ |
+| **2** | USDA FSIS | API + RSS fallback | ✅ (may be **empty** if API/RSS blocked on your network) |
 | **2** | BIS Federal Register | API | ✅ |
 | **2** | ITA AD/CVD | RSS | ✅ |
 | **3** | WTO News | RSS | ✅ |
@@ -46,7 +46,7 @@ The full pipeline is in the codebase:
 | **4** | White House Briefing | RSS | ✅ |
 | **4** | Congress.gov | API | ✅ (requires CONGRESS_API_KEY) |
 | **5** | CBP Quota, UBR | RSS | ✅ |
-| **6** | FreightWaves, JOC, SupplyChainDive, Flexport | RSS | ✅ |
+| **6** | FreightWaves, JOC, SupplyChainDive, Loadstar | RSS | ✅ |
 | **7** | CBP CROSS vectorization | — | Pending (enhancement) |
 | **8** | Importer HTS usage (internal) | Job | ✅ |
 
@@ -95,7 +95,7 @@ cd backend && celery -A app.core.celery_app worker -l info
 cd backend && celery -A app.core.celery_app beat -l info
 ```
 
-- **Poll:** Every hour — fetches all 24 sources (Tiers 1–6), inserts into `raw_signals`
+- **Poll:** Every hour — fetches all configured sources (25 in `sources_config.json`), inserts into `raw_signals`
 - **Process:** Every hour + 100s — normalizes, classifies, scores, creates `psc_alerts` when score > 70
 - **Refresh HTS usage:** Daily — populates `importer_hts_usage` from ShipmentItem (Tier 8)
 
@@ -198,3 +198,25 @@ See **[docs/COMPLIANCE_SIGNAL_ENGINE_GAPS.md](COMPLIANCE_SIGNAL_ENGINE_GAPS.md)*
 
 - Pinned previous priorities (link alerts to shipments, verify CBP CROSS, per-source scheduling, etc.)
 - GAP 1–10: Quota engine, Tariff mapping, FDA admissibility, CBP CROSS, Real-time signals, HTS filtering, Importer-aware mapping, Financial impact, Output structure, Success criteria
+
+---
+
+## 8. Sprint 20 — Source validation & operations (March 2026)
+
+**Canonical log:** **[docs/SPRINT20_PROGRESS.md](SPRINT20_PROGRESS.md)** → section *“Source validation, feed hardening & docs”* lists every change (poller headers, FSIS fallback, URL updates, **LOADSTAR** rename, CLI scripts, Signal Health buttons, env vars).
+
+**Quick reference:**
+
+| Topic | Where |
+|--------|--------|
+| Test all feeds from terminal | `cd backend && source venv/bin/activate` → `python scripts/test_regulatory_sources.py` |
+| Test one feed | `python scripts/test_one_source.py SOURCE_NAME` |
+| Corporate proxy | `export REGULATORY_NO_PROXY=1` — see [REGULATORY_SOURCES_TROUBLESHOOTING.md](REGULATORY_SOURCES_TROUBLESHOOTING.md) |
+| Per-source URLs and status | [SOURCE_VALIDATION_GUIDE.md](SOURCE_VALIDATION_GUIDE.md) |
+| API keys & setup checklist | [SPRINT20_SOURCE_SETUP_GUIDE.md](SPRINT20_SOURCE_SETUP_GUIDE.md) |
+| CBP CROSS XML | [CBP_CROSS_SETUP.md](CBP_CROSS_SETUP.md), `.env`: `CBP_CROSS_XML_URL` |
+| Leader / non-dev checklist | [REGULATORY_SOURCES_LEADER_PLAYBOOK.md](REGULATORY_SOURCES_LEADER_PLAYBOOK.md) |
+
+**Signal Health** (`/app/signal-health`): **Poll now**, **Process now**, **Refresh HTS**, **Test all sources**, **Refresh** — see troubleshooting doc for plain-English meanings.
+
+**Baseline:** On a clean run (with Congress key and good network), expect **most** sources **OK**; **USITC_HTS** may show **empty** until an HTS release changes; **USDA_FSIS** may stay **empty** behind some WAFs — try another network or GovDelivery as a manual channel.

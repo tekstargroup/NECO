@@ -87,6 +87,22 @@ async def health_check():
     }
 
 
+@app.get("/api/v1/runtime-trust", status_code=status.HTTP_200_OK)
+async def runtime_trust_context():
+    """
+    Non-secret runtime flags for UI trust banner (Sprint A).
+    Safe to call without auth; does not expose API keys or tenant data.
+    """
+    return {
+        "environment": settings.ENVIRONMENT,
+        "classification_rule_mode": getattr(settings, "CLASSIFICATION_RULE_MODE", "enforce"),
+        "sprint12_inline_analysis_dev": settings.SPRINT12_INLINE_ANALYSIS_DEV,
+        "sprint12_sync_analysis_dev": settings.SPRINT12_SYNC_ANALYSIS_DEV,
+        "sprint12_fast_analysis_dev": settings.SPRINT12_FAST_ANALYSIS_DEV,
+        "sprint12_instant_analysis_dev": settings.SPRINT12_INSTANT_ANALYSIS_DEV,
+    }
+
+
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health():
     """

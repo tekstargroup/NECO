@@ -19,18 +19,18 @@
     {
       "name": "CBP_DUTY_RATES",
       "type": "rss",
-      "url": "https://www.cbp.gov/rss/trade/duty-rates",
+      "url": "https://www.cbp.gov/rss/trade",
       "frequency": "6h",
       "tier": 1,
-      "description": "Duty rate updates"
+      "description": "CBP trade RSS (duty-rates feed is often empty; same items as CSMS for coverage)"
     },
     {
       "name": "CBP_LEGAL_DECISIONS",
       "type": "rss",
-      "url": "https://www.cbp.gov/rss/trade/legal-decisions-publications",
+      "url": "https://www.cbp.gov/rss/trade",
       "frequency": "6h",
       "tier": 1,
-      "description": "Trade-related legal decisions and publications"
+      "description": "CBP trade RSS (legal-decisions feed often empty; same items as CSMS for coverage)"
     },
     {
       "name": "FEDERAL_REGISTER",
@@ -148,10 +148,10 @@
     {
       "name": "WHITE_HOUSE_BRIEFING",
       "type": "rss",
-      "url": "https://www.whitehouse.gov/briefing-room/feed/",
+      "url": "https://www.whitehouse.gov/presidential-actions/feed/",
       "frequency": "6h",
       "tier": 4,
-      "description": "White House - executive orders, tariffs, sanctions"
+      "description": "White House presidential actions (EOs, proclamations); briefing-room/feed retired"
     },
     {
       "name": "CONGRESS_GOV",
@@ -173,10 +173,10 @@
     {
       "name": "CBP_UBR",
       "type": "rss",
-      "url": "https://www.cbp.gov/rss/trade/unified-business-resumption-messaging",
+      "url": "https://www.cbp.gov/rss/trade",
       "frequency": "5min",
       "tier": 5,
-      "description": "Unified Business Resumption messaging"
+      "description": "CBP trade RSS (UBR-specific feed often empty; UBR posts appear in main trade feed)"
     },
     {
       "name": "FREIGHTWAVES",
@@ -197,18 +197,18 @@
     {
       "name": "SUPPLY_CHAIN_DIVE",
       "type": "rss",
-      "url": "https://www.supplychaindive.com/feed/",
+      "url": "https://www.supplychaindive.com/feeds/news/",
       "frequency": "6h",
       "tier": 6,
-      "description": "SupplyChainDive"
+      "description": "SupplyChainDive official news feed"
     },
     {
-      "name": "FLEXPORT_BLOG",
+      "name": "LOADSTAR",
       "type": "rss",
-      "url": "https://www.flexport.com/blog/feed/",
+      "url": "https://theloadstar.com/feed/",
       "frequency": "1d",
       "tier": 6,
-      "description": "Flexport customs/trade blog"
+      "description": "The Loadstar — global logistics and trade (replaces unavailable Flexport blog RSS)"
     }
   ]
 }

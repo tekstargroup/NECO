@@ -1,9 +1,10 @@
 """
 Sprint 12 API Dependencies - Clerk auth bridge with deterministic provisioning.
 
-Current posture:
+Posture:
 - Accept Authorization: Bearer <Clerk JWT>
-- Extract clerk_user_id from unverified JWT `sub` (dev-only bridge; verification is Sprint 13)
+- When CLERK_JWT_VERIFY=true + CLERK_JWKS_URL is set: full signature, exp, iss verification
+- When verification is disabled (dev): extract claims without verification + log warning on first call
 - Require explicit org header: X-Clerk-Org-Id
 - Default strict provisioning (no auto-creates)
 - Optional dev-only auto-provision gated by env var
@@ -12,10 +13,11 @@ Current posture:
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
-from jose import jwt
+from jose import jwt, jwk, JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +29,10 @@ from app.models.organization import Organization
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+_jwks_cache: dict[str, Any] = {"keys": None, "fetched_at": 0}
+_JWKS_CACHE_TTL = 3600  # re-fetch JWKS every hour
+_unverified_warning_logged = False
 
 
 def _extract_bearer_token(request: Request) -> str:
@@ -45,7 +51,102 @@ def _extract_bearer_token(request: Request) -> str:
     return token
 
 
-def _extract_unverified_claims(token: str) -> dict[str, Any]:
+async def _get_jwks() -> Optional[dict]:
+    """Fetch and cache Clerk JWKS keys (async-safe)."""
+    if not settings.CLERK_JWKS_URL:
+        return None
+    now = time.time()
+    if _jwks_cache["keys"] and (now - _jwks_cache["fetched_at"]) < _JWKS_CACHE_TTL:
+        return _jwks_cache["keys"]
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(settings.CLERK_JWKS_URL, timeout=10)
+            resp.raise_for_status()
+            keys = resp.json()
+        _jwks_cache["keys"] = keys
+        _jwks_cache["fetched_at"] = now
+        return keys
+    except Exception as e:
+        logger.error("Failed to fetch Clerk JWKS from %s: %s", settings.CLERK_JWKS_URL, e)
+        if _jwks_cache["keys"]:
+            return _jwks_cache["keys"]
+        return None
+
+
+async def _verify_and_decode(token: str) -> dict[str, Any]:
+    """Verify JWT signature and decode claims using Clerk JWKS."""
+    jwks_data = await _get_jwks()
+    if not jwks_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication unavailable (JWKS not loaded)",
+        )
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required (Invalid token header)",
+        )
+    kid = unverified_header.get("kid")
+    matching_key = None
+    for key_data in jwks_data.get("keys", []):
+        if key_data.get("kid") == kid:
+            matching_key = key_data
+            break
+    if not matching_key:
+        _jwks_cache["keys"] = None
+        jwks_data = await _get_jwks()
+        if jwks_data:
+            for key_data in jwks_data.get("keys", []):
+                if key_data.get("kid") == kid:
+                    matching_key = key_data
+                    break
+    if not matching_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required (No matching signing key)",
+        )
+    try:
+        rsa_key = jwk.construct(matching_key)
+        audience = settings.CLERK_JWT_AUDIENCE or None
+        decode_options = {"verify_exp": True, "verify_aud": audience is not None}
+        issuer = settings.CLERK_JWT_ISSUER or None
+        claims = jwt.decode(
+            token,
+            rsa_key,
+            algorithms=["RS256"],
+            options=decode_options,
+            issuer=issuer,
+            audience=audience,
+        )
+        return claims
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required (Token expired)",
+        )
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Authentication required (Token verification failed: {e})",
+        )
+
+
+async def _extract_claims(token: str) -> dict[str, Any]:
+    """Extract JWT claims — verified when configured, unverified in dev."""
+    global _unverified_warning_logged
+    if settings.CLERK_JWT_VERIFY and settings.CLERK_JWKS_URL:
+        return await _verify_and_decode(token)
+    if not _unverified_warning_logged:
+        logger.warning(
+            "JWT verification DISABLED (CLERK_JWT_VERIFY=%s, CLERK_JWKS_URL=%s). "
+            "Set CLERK_JWT_VERIFY=true and CLERK_JWKS_URL to enable.",
+            settings.CLERK_JWT_VERIFY,
+            "set" if settings.CLERK_JWKS_URL else "unset",
+        )
+        _unverified_warning_logged = True
     try:
         return jwt.get_unverified_claims(token)
     except Exception:
@@ -74,7 +175,7 @@ async def get_current_user_sprint12(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     token = _extract_bearer_token(request)
-    claims = _extract_unverified_claims(token)
+    claims = await _extract_claims(token)
     clerk_user_id = claims.get("sub")
 
     if not isinstance(clerk_user_id, str) or not clerk_user_id.strip():

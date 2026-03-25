@@ -2,7 +2,7 @@
 
 **Purpose:** Full spec for NECO's compliance intelligence pipeline — ingest, classify, score, and produce actionable PSC Radar alerts.
 
-**Related:** [docs/REGULATORY_MONITORING.md](REGULATORY_MONITORING.md), [docs/SPRINT17_PLUS_BACKLOG.md](SPRINT17_PLUS_BACKLOG.md)
+**Related:** [docs/REGULATORY_MONITORING.md](REGULATORY_MONITORING.md), [docs/SPRINT17_PLUS_BACKLOG.md](SPRINT17_PLUS_BACKLOG.md), [docs/SPRINT20_PROGRESS.md](SPRINT20_PROGRESS.md) (Sprint 20 implementation + March 2026 source-validation log), [docs/SOURCE_VALIDATION_GUIDE.md](SOURCE_VALIDATION_GUIDE.md)
 
 ---
 

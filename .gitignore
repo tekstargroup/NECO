@@ -3,7 +3,9 @@
 .env.*
 !.env.example
 
-.cursor/
+.cursor/**
+!.cursor/plans/
+!.cursor/plans/**
 .vscode/
 
 venv/
@@ -21,5 +23,6 @@ data/
 
 frontend/.next/
 frontend/node_modules/
+backend/celerybeat-schedule.db
 backend/.pytest_cache/
 backend/.mypy_cache/

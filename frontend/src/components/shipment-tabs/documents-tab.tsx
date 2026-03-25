@@ -6,15 +6,18 @@
 
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApiClient, ApiClientError, formatApiError } from "@/lib/api-client-client"
 import { Upload, FileText, FileSpreadsheet, Trash2, X } from "lucide-react"
+import countries from "i18n-iso-countries"
+import enCountries from "i18n-iso-countries/langs/en.json"
 
 interface DocumentsTabProps {
   shipment: any
   shipmentId: string
+  onRunPreComplianceAnalysis?: () => void
 }
 
 type DocumentType = "ENTRY_SUMMARY" | "COMMERCIAL_INVOICE" | "PACKING_LIST" | "DATA_SHEET"
@@ -25,6 +28,61 @@ interface ShipmentDocument {
   filename: string
   uploaded_at: string
   retention_expires_at: string
+  processing_status?: string | null
+  extraction_method?: string | null
+  ocr_used?: boolean | null
+  page_count?: number | null
+  char_count?: number | null
+  table_detected?: boolean | null
+  extraction_status?: string | null
+  usable_for_analysis?: boolean | null
+  data_sheet_user_confirmed?: boolean
+}
+
+function isDataSheetEvidenceReady(doc: ShipmentDocument | undefined): boolean {
+  if (!doc || doc.document_type !== "DATA_SHEET") return false
+  if (doc.data_sheet_user_confirmed) return true
+  return doc.usable_for_analysis === true && (doc.char_count ?? 0) > 0
+}
+
+countries.registerLocale(enCountries)
+const COUNTRY_NAME_MAP = countries.getNames("en", { select: "official" }) as Record<string, string>
+const COUNTRY_OPTIONS = Object.entries(COUNTRY_NAME_MAP)
+  .map(([alpha2, name]) => ({
+    alpha2,
+    alpha3: countries.alpha2ToAlpha3(alpha2) || "",
+    name,
+  }))
+  .sort((a, b) => a.name.localeCompare(b.name))
+
+function normalizeCountryInput(raw: string): string | null {
+  const input = String(raw || "").trim()
+  if (!input) return null
+  const upper = input.toUpperCase()
+  if (upper.length === 2 && countries.isValid(upper)) return upper
+  if (upper.length === 3) {
+    const a2 = countries.alpha3ToAlpha2(upper)
+    if (a2 && countries.isValid(a2)) return a2
+  }
+  const parenCodes = upper.match(/\(([A-Z\/]{2,9})\)/)?.[1]
+  if (parenCodes) {
+    const firstCode = parenCodes.split("/")[0]?.trim()
+    if (firstCode) {
+      const normalized = normalizeCountryInput(firstCode)
+      if (normalized) return normalized
+    }
+  }
+  const byName = countries.getAlpha2Code(input, "en")
+  if (byName && countries.isValid(byName.toUpperCase())) return byName.toUpperCase()
+  return null
+}
+
+function normalizeLabel(raw: string): string {
+  return String(raw || "")
+    .toLowerCase()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
 }
 
 const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
@@ -87,19 +145,48 @@ interface PendingFile {
   docType: DocumentType
 }
 
-export function DocumentsTab({ shipment, shipmentId }: DocumentsTabProps) {
-  const { apiGet, apiPost, apiPut, apiDelete } = useApiClient()
+export function DocumentsTab({ shipment, shipmentId, onRunPreComplianceAnalysis }: DocumentsTabProps) {
+  const { apiGet, apiPost, apiPatch, apiPut, apiDelete } = useApiClient()
+  const shipmentTypeRef = (shipment?.references || []).find((r: any) => String(r?.key || "").toUpperCase() === "SHIPMENT_TYPE")
+  const shipmentType = String(shipmentTypeRef?.value || "PRE_COMPLIANCE").toUpperCase()
+  const isPreCompliance = shipmentType !== "ENTRY_COMPLIANCE"
   const [documents, setDocuments] = useState<ShipmentDocument[]>([])
   const [analysisItems, setAnalysisItems] = useState<any[]>([])
+  const [shipmentItems, setShipmentItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [supplementalUrl, setSupplementalUrl] = useState<Record<string, string>>({})
+  const [countryOfOriginInput, setCountryOfOriginInput] = useState<Record<string, string>>({})
   const [supplementalSubmitting, setSupplementalSubmitting] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<string | null>(null)
+  const [loadWarnings, setLoadWarnings] = useState<string[]>([])
+  const [clarificationError, setClarificationError] = useState<string | null>(null)
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
+  const [reprocessingId, setReprocessingId] = useState<string | null>(null)
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
+  const [countryPickerOpenFor, setCountryPickerOpenFor] = useState<string | null>(null)
+  const [countryPickerHighlightIndex, setCountryPickerHighlightIndex] = useState<Record<string, number>>({})
+  const countryInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const [trustWorkflow, setTrustWorkflow] = useState<{
+    items?: Array<{ item_id?: string; assigned_document_ids?: string[] }>
+  } | null>(null)
+  const [linkItemChoice, setLinkItemChoice] = useState<Record<string, string>>({})
+  const [linkingDocId, setLinkingDocId] = useState<string | null>(null)
+
+  const loadTrustWorkflow = async () => {
+    try {
+      const tw = await apiGet<{
+        items?: Array<{ item_id?: string; assigned_document_ids?: string[] }>
+      }>(`/api/v1/shipments/${shipmentId}/trust-workflow`)
+      setTrustWorkflow(tw)
+    } catch {
+      setTrustWorkflow(null)
+      setLoadWarnings(prev => prev.includes("workflow") ? prev : [...prev, "workflow"])
+    }
+  }
 
   const loadDocuments = async () => {
     try {
@@ -117,15 +204,34 @@ export function DocumentsTab({ shipment, shipmentId }: DocumentsTabProps) {
   const loadAnalysisItems = async () => {
     try {
       const status = await apiGet<any>(`/api/v1/shipments/${shipmentId}/analysis-status`)
-      setAnalysisItems(status?.result_json?.items || [])
+      const nextItems = status?.result_json?.items || []
+      setAnalysisItems(nextItems)
+      const cooByItem: Record<string, string> = {}
+      nextItems.forEach((item: any) => {
+        if (item?.id) cooByItem[String(item.id)] = String(item.country_of_origin || "")
+      })
+      setCountryOfOriginInput((prev) => ({ ...cooByItem, ...prev }))
     } catch {
       setAnalysisItems([])
+      setLoadWarnings(prev => prev.includes("analysis") ? prev : [...prev, "analysis"])
+    }
+  }
+
+  const loadShipmentItems = async () => {
+    try {
+      const detail = await apiGet<any>(`/api/v1/shipments/${shipmentId}`)
+      setShipmentItems(detail?.items || [])
+    } catch {
+      setShipmentItems([])
+      setLoadWarnings(prev => prev.includes("items") ? prev : [...prev, "items"])
     }
   }
 
   useEffect(() => {
     loadDocuments()
     loadAnalysisItems()
+    loadShipmentItems()
+    loadTrustWorkflow()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shipmentId])
 
@@ -198,6 +304,7 @@ export function DocumentsTab({ shipment, shipmentId }: DocumentsTabProps) {
     const count = pendingFiles.length
     setUploading(true)
     setError(null)
+    setClarificationError(null)
     setUploadSuccess(null)
     try {
       for (const pf of pendingFiles) {
@@ -206,6 +313,8 @@ export function DocumentsTab({ shipment, shipmentId }: DocumentsTabProps) {
       setPendingFiles([])
       await loadDocuments()
       await loadAnalysisItems()
+      await loadShipmentItems()
+      await loadTrustWorkflow()
       setUploadSuccess(`Uploaded ${count} file${count !== 1 ? "s" : ""}.`)
       setTimeout(() => setUploadSuccess(null), 4000)
     } catch (e: unknown) {
@@ -257,16 +366,89 @@ export function DocumentsTab({ shipment, shipmentId }: DocumentsTabProps) {
     if (!confirmed) return
     setDeletingId(docId)
     setError(null)
+    setClarificationError(null)
     try {
       await apiDelete(`/api/v1/shipment-documents/${docId}`)
       await loadDocuments()
       await loadAnalysisItems()
+      await loadShipmentItems()
+      await loadTrustWorkflow()
     } catch (e: unknown) {
       setError(formatApiError(e as ApiClientError))
     } finally {
       setDeletingId(null)
     }
   }
+
+  const linkedDocIdSet = new Set<string>()
+  trustWorkflow?.items?.forEach((it) => {
+    ;(it.assigned_document_ids || []).forEach((id) => linkedDocIdSet.add(id))
+  })
+  const unmatchedDocs = documents.filter((d) => !linkedDocIdSet.has(d.id))
+
+  const dataSheetDocs = documents.filter((d) => d.document_type === "DATA_SHEET")
+  const preComplianceRows = isPreCompliance
+    ? dataSheetDocs.length > 0
+    ? dataSheetDocs.map((doc, idx) => {
+        const docLabel = doc.filename.replace(/\.[^.]+$/, "") || `Item ${idx + 1}`
+        const docKey = normalizeLabel(docLabel)
+        const matchedShipmentItem = shipmentItems.find((it: any) => normalizeLabel(it.label) === docKey)
+        const matchedAnalysisItem = analysisItems.find((it: any) => normalizeLabel(it.label) === docKey)
+        const matched = matchedAnalysisItem || matchedShipmentItem
+        return {
+          key: `doc-${doc.id}`,
+          itemId: matched?.id ? String(matched.id) : "",
+          sourceDocId: doc.id,
+          label: docLabel,
+          country_of_origin: matched?.country_of_origin || "",
+          likelyHts:
+            matched?.psc?.alternatives?.[0]?.alternative_hts_code ||
+            matched?.classification?.primary_candidate?.hts_code ||
+            matched?.hts_code ||
+            matched?.declared_hts_code ||
+            null,
+        }
+      })
+    : []
+    : analysisItems.length > 0
+    ? analysisItems.map((item: any, idx: number) => ({
+        key: item.id ? String(item.id) : `analysis-${idx}`,
+        itemId: item.id ? String(item.id) : "",
+        label: item.label || `Item ${idx + 1}`,
+        country_of_origin: item.country_of_origin || "",
+        likelyHts:
+          item?.psc?.alternatives?.[0]?.alternative_hts_code ||
+          item?.classification?.primary_candidate?.hts_code ||
+          item?.hts_code ||
+          null,
+      }))
+    : shipmentItems.map((item: any, idx: number) => ({
+        key: item.id ? String(item.id) : `shipment-${idx}`,
+        itemId: item.id ? String(item.id) : "",
+        label: item.label || `Item ${idx + 1}`,
+        country_of_origin: item.country_of_origin || "",
+        likelyHts: item.declared_hts_code || null,
+      }))
+
+  useEffect(() => {
+    if (!isPreCompliance || preComplianceRows.length === 0) return
+    setExpandedItems((prev) => {
+      const next: Record<string, boolean> = { ...prev }
+      preComplianceRows.forEach((row) => {
+        const savedCoo = String(row.country_of_origin || "").toUpperCase()
+        const hasSavedCoo = savedCoo.length === 2
+        if (next[row.key] == null) next[row.key] = !hasSavedCoo
+      })
+      return next
+    })
+  }, [isPreCompliance, preComplianceRows.length, countryOfOriginInput])
+
+  const completedCooCount = preComplianceRows.filter((row) => {
+    const savedCoo = String(row.country_of_origin || "").toUpperCase()
+    return savedCoo.length === 2
+  }).length
+  const totalCooCount = preComplianceRows.length
+  const allCooComplete = totalCooCount > 0 && completedCooCount === totalCooCount
 
   return (
     <div className="space-y-6">
@@ -368,6 +550,15 @@ export function DocumentsTab({ shipment, shipmentId }: DocumentsTabProps) {
         </CardContent>
       </Card>
 
+      {loadWarnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+          {loadWarnings.includes("workflow") && <span>Could not load trust workflow. </span>}
+          {loadWarnings.includes("analysis") && <span>Could not load analysis items. </span>}
+          {loadWarnings.includes("items") && <span>Could not load shipment items. </span>}
+          Some information may be incomplete.
+        </div>
+      )}
+
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2">
           <p className="text-sm text-amber-800">{error}</p>
@@ -376,79 +567,331 @@ export function DocumentsTab({ shipment, shipmentId }: DocumentsTabProps) {
           </p>
         </div>
       )}
+      {clarificationError && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p className="text-sm text-amber-800">{clarificationError}</p>
+        </div>
+      )}
 
-      {analysisItems.length > 0 && (
+      {preComplianceRows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Optional Product Evidence</CardTitle>
+            <CardTitle>{isPreCompliance ? "Pre-Compliance Clarifications" : "Optional Product Evidence"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              For each line item, you can optionally add a product data sheet or Amazon/product link to strengthen evidence quality. Analysis is not blocked if you skip this.
-            </p>
-            {analysisItems.map((item: any, idx: number) => {
-              const itemId = item.id ? String(item.id) : ""
-              const needsMoreData = Boolean(item.needs_supplemental_evidence)
-              const label = item.label || `Item ${idx + 1}`
-              const pscAlt = item?.psc?.alternatives?.[0]
-              const classPrimary = item?.classification?.primary_candidate
-              const likelyHts = pscAlt?.alternative_hts_code || classPrimary?.hts_code || item?.hts_code || null
+            {isPreCompliance && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 space-y-1">
+                <p><strong>{totalCooCount} items detected</strong></p>
+                <p>{totalCooCount - completedCooCount} of {totalCooCount} require Country of Origin</p>
+                <p>Analysis is blocked until COO is completed for all items</p>
+              </div>
+            )}
+            {preComplianceRows.map((row: any, idx: number) => {
+              const itemId = row.itemId ? String(row.itemId) : ""
+              const savedCoo = String(row.country_of_origin || "").toUpperCase()
+              const hasSavedCoo = savedCoo.length === 2
+              const label = row.label || `Item ${idx + 1}`
+              const likelyHts = row.likelyHts
+              const rowDoc = row.sourceDocId
+                ? documents.find((d) => d.id === row.sourceDocId)
+                : undefined
+              const hasDataSheetEvidence =
+                isDataSheetEvidenceReady(rowDoc) ||
+                String(analysisItems[idx]?.supplemental_evidence_source || "").toLowerCase() === "amazon_url"
+              const hasUrlEvidence =
+                String(analysisItems[idx]?.supplemental_evidence_source || "").toLowerCase() === "amazon_url"
+              const confidenceStage = !hasDataSheetEvidence
+                ? "INITIAL"
+                : hasDataSheetEvidence && !hasSavedCoo
+                ? "IMPROVED"
+                : hasDataSheetEvidence && hasSavedCoo && hasUrlEvidence
+                ? "STRONG"
+                : hasDataSheetEvidence && hasSavedCoo
+                ? "IMPROVED"
+                : "INITIAL"
+              const htsAssuranceText = likelyHts
+                ? `Most likely HS code from current evidence: ${likelyHts}`
+                : hasDataSheetEvidence
+                ? "Data sheet received. We have enough evidence for an initial classification pass."
+                : "Most likely HS code from current evidence: Pending more document evidence"
+              const isExpanded = expandedItems[row.key] ?? !hasSavedCoo
+              const filteredCountryOptions = COUNTRY_OPTIONS
+                .filter((c) => {
+                  const q = String(countryOfOriginInput[row.key] || "").trim().toLowerCase()
+                  if (!q) return true
+                  return (
+                    c.name.toLowerCase().includes(q) ||
+                    c.alpha2.toLowerCase().includes(q) ||
+                    c.alpha3.toLowerCase().includes(q)
+                  )
+                })
+                .slice(0, 10)
               return (
-                <div key={itemId || `line-${idx}`} className="border rounded-lg p-3 space-y-2">
+                <div key={row.key} className="border rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium">{label}</p>
-                    {needsMoreData ? (
-                      <span className="text-xs text-amber-700 font-medium">
-                        NECO could improve accuracy with more product information
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Optional</span>
-                    )}
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-left"
+                      onClick={() => setExpandedItems((s) => ({ ...s, [row.key]: !isExpanded }))}
+                    >
+                      Item {idx + 1} - {label}
+                    </button>
+                    <span className={`text-xs font-medium ${hasSavedCoo ? "text-green-700" : "text-amber-700"}`}>
+                      {hasSavedCoo ? "COO saved" : "Required: Country of Origin"}
+                    </span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Do you have a data sheet or Amazon/product link for this line item?
-                  </p>
+                  {isExpanded && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-slate-700 block">Required: Country of Origin</label>
+                      <input
+                        ref={(el) => { countryInputRefs.current[row.key] = el }}
+                        type="text"
+                        placeholder="Search country: South Korea, KR, or KOR"
+                        value={countryOfOriginInput[row.key] ?? ""}
+                        onChange={(e) =>
+                          setCountryOfOriginInput((s) => ({
+                            ...s,
+                            [row.key]: e.target.value,
+                          }))
+                        }
+                        onFocus={() => {
+                          setCountryPickerOpenFor(row.key)
+                          setCountryPickerHighlightIndex((s) => ({ ...s, [row.key]: 0 }))
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            setCountryPickerOpenFor(null)
+                            return
+                          }
+                          if (!filteredCountryOptions.length) return
+                          if (e.key === "ArrowDown") {
+                            e.preventDefault()
+                            setCountryPickerOpenFor(row.key)
+                            setCountryPickerHighlightIndex((s) => ({
+                              ...s,
+                              [row.key]: Math.min(
+                                (s[row.key] ?? -1) + 1,
+                                filteredCountryOptions.length - 1
+                              ),
+                            }))
+                          } else if (e.key === "ArrowUp") {
+                            e.preventDefault()
+                            setCountryPickerOpenFor(row.key)
+                            setCountryPickerHighlightIndex((s) => ({
+                              ...s,
+                              [row.key]: Math.max((s[row.key] ?? 0) - 1, 0),
+                            }))
+                          } else if (e.key === "Enter" && countryPickerOpenFor === row.key) {
+                            const idx = countryPickerHighlightIndex[row.key] ?? 0
+                            const selected = filteredCountryOptions[idx]
+                            if (selected) {
+                              e.preventDefault()
+                              setCountryOfOriginInput((s) => ({
+                                ...s,
+                                [row.key]: `${selected.name} (${selected.alpha2}/${selected.alpha3})`,
+                              }))
+                              setCountryPickerOpenFor(null)
+                            }
+                          }
+                        }}
+                        onBlur={() => setTimeout(() => setCountryPickerOpenFor((k) => (k === row.key ? null : k)), 120)}
+                        className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+                      />
+                      {countryPickerOpenFor === row.key && (
+                        <div className="max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white">
+                          {filteredCountryOptions.map((c, optionIdx) => (
+                              <button
+                                key={c.alpha2}
+                                type="button"
+                                className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 ${
+                                  (countryPickerHighlightIndex[row.key] ?? 0) === optionIdx ? "bg-slate-100" : ""
+                                }`}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setCountryOfOriginInput((s) => ({ ...s, [row.key]: `${c.name} (${c.alpha2}/${c.alpha3})` }))
+                                  setCountryPickerOpenFor(null)
+                                }}
+                              >
+                                {c.name} ({c.alpha2}/{c.alpha3})
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                      <Button
+                        size="sm"
+                        disabled={
+                          supplementalSubmitting[row.key] ||
+                          !(countryOfOriginInput[row.key] ?? "").trim()
+                        }
+                        onClick={async () => {
+                          const value = normalizeCountryInput(countryOfOriginInput[row.key] ?? "")
+                          if (!value) {
+                            setClarificationError("Invalid country. Enter a country name, 2-letter ISO code (e.g. KR), or 3-letter code (e.g. KOR).")
+                            return
+                          }
+                          setClarificationError(null)
+                          setSupplementalSubmitting((s) => ({ ...s, [row.key]: true }))
+                          try {
+                            if (itemId) {
+                              await apiPatch(`/api/v1/shipments/${shipmentId}/items/${itemId}`, {
+                                country_of_origin: value,
+                              })
+                            } else {
+                              await apiPost(`/api/v1/shipments/${shipmentId}/items`, {
+                                label,
+                                country_of_origin: value,
+                              })
+                            }
+                            await loadAnalysisItems()
+                            await loadShipmentItems()
+                            setCountryOfOriginInput((s) => ({ ...s, [row.key]: value }))
+                            const nextRow = preComplianceRows[idx + 1]
+                            setExpandedItems((s) => ({
+                              ...s,
+                              [row.key]: false,
+                              ...(nextRow ? { [nextRow.key]: true } : {}),
+                            }))
+                            if (nextRow) {
+                              setTimeout(() => {
+                                countryInputRefs.current[nextRow.key]?.focus()
+                                setCountryPickerOpenFor(nextRow.key)
+                                setCountryPickerHighlightIndex((s) => ({ ...s, [nextRow.key]: 0 }))
+                              }, 0)
+                            }
+                          } catch (e: unknown) {
+                            setClarificationError(formatApiError(e as ApiClientError))
+                          } finally {
+                            setSupplementalSubmitting((s) => ({ ...s, [row.key]: false }))
+                          }
+                        }}
+                      >
+                        {supplementalSubmitting[row.key] ? "Saving..." : "Save COO"}
+                      </Button>
+                    </div>
+                  )}
                   <p className="text-xs text-[#334155]">
-                    Most likely HS code{item?.hts_code ? " used in current analysis" : " from current evidence"}:{" "}
-                    <strong>{likelyHts || "Pending more document evidence"}</strong>
+                    <strong>{htsAssuranceText}</strong>
+                    {isPreCompliance && !hasSavedCoo ? " (provisional)" : ""}
                   </p>
+                  {hasDataSheetEvidence ? (
+                    <p className="text-xs text-muted-foreground">
+                      Data sheet is usable for analysis (extracted text checks out, or you confirmed it below).
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-800">
+                      No usable data sheet evidence yet. Run analysis once to extract text, map this document to a line
+                      item, or confirm the data sheet in the Documents list.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">Add a product URL only if you want higher certainty.</p>
                   <div className="flex flex-wrap gap-2 items-center">
                     <input
                       type="url"
-                      placeholder="Amazon or product URL"
-                      value={supplementalUrl[itemId] ?? ""}
-                      onChange={(e) => setSupplementalUrl((s) => ({ ...s, [itemId]: e.target.value }))}
+                      placeholder="Optional: Amazon or product URL for higher certainty"
+                      value={supplementalUrl[row.key] ?? ""}
+                      onChange={(e) => setSupplementalUrl((s) => ({ ...s, [row.key]: e.target.value }))}
                       className="flex-1 min-w-[180px] rounded border border-input bg-background px-2 py-1.5 text-sm"
                       disabled={!itemId}
                     />
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!itemId || supplementalSubmitting[itemId] || !(supplementalUrl[itemId] ?? "").trim()}
+                      disabled={!itemId || supplementalSubmitting[row.key] || !(supplementalUrl[row.key] ?? "").trim()}
                       onClick={async () => {
-                        const url = (supplementalUrl[itemId] ?? "").trim()
+                        const url = (supplementalUrl[row.key] ?? "").trim()
                         if (!itemId || !url) return
-                        setSupplementalSubmitting((s) => ({ ...s, [itemId]: true }))
+                        setSupplementalSubmitting((s) => ({ ...s, [row.key]: true }))
                         try {
                           await apiPost(`/api/v1/shipments/${shipmentId}/items/${itemId}/supplemental-evidence`, {
                             type: "amazon_url",
                             amazon_url: url,
                           })
-                          setSupplementalUrl((s) => ({ ...s, [itemId]: "" }))
+                          setSupplementalUrl((s) => ({ ...s, [row.key]: "" }))
                           await loadAnalysisItems()
                         } catch (e: unknown) {
                           setError(formatApiError(e as ApiClientError))
                         } finally {
-                          setSupplementalSubmitting((s) => ({ ...s, [itemId]: false }))
+                          setSupplementalSubmitting((s) => ({ ...s, [row.key]: false }))
                         }
                       }}
                     >
-                      {itemId && supplementalSubmitting[itemId] ? "Adding..." : "Save link"}
+                      {supplementalSubmitting[row.key] ? "Adding..." : "Save link"}
                     </Button>
                   </div>
+                  <p className="text-[11px] text-slate-500">
+                    Evidence posture: {confidenceStage === "STRONG" ? "Stronger" : confidenceStage === "IMPROVED" ? "Improved" : "Initial"}
+                  </p>
                 </div>
               )
             })}
+            {isPreCompliance && (
+              <div className="border-t pt-3 flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">{completedCooCount} of {totalCooCount} COO completed</p>
+                <Button
+                  disabled={!allCooComplete || !onRunPreComplianceAnalysis}
+                  onClick={() => onRunPreComplianceAnalysis?.()}
+                >
+                  Run Pre-Compliance Analysis
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {unmatchedDocs.length > 0 && shipmentItems.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Unmapped documents</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              These files are not linked to a line item. Link them so data sheets follow the correct SKU (filename
+              matching is only a default).
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {unmatchedDocs.map((doc) => (
+              <div key={doc.id} className="flex flex-wrap items-center gap-2 border rounded-md p-3">
+                <span className="text-sm font-medium truncate flex-1 min-w-0">{doc.filename}</span>
+                <label className="sr-only">Line item for {doc.filename}</label>
+                <select
+                  className="text-sm border rounded px-2 py-1.5 bg-background"
+                  value={linkItemChoice[doc.id] || ""}
+                  onChange={(e) => setLinkItemChoice((s) => ({ ...s, [doc.id]: e.target.value }))}
+                  aria-label={`Line item for ${doc.filename}`}
+                >
+                  <option value="">Choose line item…</option>
+                  {shipmentItems.map((it: any) => (
+                    <option key={String(it.id)} value={String(it.id)}>
+                      {it.label || it.id}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  disabled={!linkItemChoice[doc.id] || linkingDocId === doc.id}
+                  onClick={async () => {
+                    const itemId = linkItemChoice[doc.id]
+                    if (!itemId) return
+                    setLinkingDocId(doc.id)
+                    setError(null)
+                    try {
+                      await apiPost(`/api/v1/shipments/${shipmentId}/item-document-links`, {
+                        shipment_item_id: itemId,
+                        shipment_document_id: doc.id,
+                        mapping_status: "USER_CONFIRMED",
+                      })
+                      await loadTrustWorkflow()
+                    } catch (e: unknown) {
+                      setError(formatApiError(e as ApiClientError))
+                    } finally {
+                      setLinkingDocId(null)
+                    }
+                  }}
+                >
+                  {linkingDocId === doc.id ? "Linking…" : "Link"}
+                </Button>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
@@ -484,6 +927,78 @@ export function DocumentsTab({ shipment, shipmentId }: DocumentsTabProps) {
                     <p className="text-xs text-muted-foreground">
                       Uploaded {new Date(doc.uploaded_at).toLocaleDateString()}
                     </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {doc.extraction_status
+                        ? `Extraction: ${doc.extraction_status}`
+                        : doc.processing_status && doc.processing_status !== "UPLOADED"
+                          ? `Processing: ${doc.processing_status}`
+                          : "Extraction: pending (runs with analysis)"}
+                      {doc.char_count != null ? ` · ${doc.char_count} chars` : ""}
+                      {doc.ocr_used ? " · OCR used" : ""}
+                      {doc.usable_for_analysis === false ? " · Not usable for analysis" : ""}
+                    </p>
+                    {doc.extraction_status === "empty" && (
+                      <p className="text-[11px] text-amber-700 font-medium mt-0.5">
+                        No readable text extracted. This document cannot contribute to analysis.
+                      </p>
+                    )}
+                    {doc.extraction_status === "success" && doc.char_count != null && doc.char_count < 100 && (
+                      <p className="text-[11px] text-amber-700 mt-0.5">
+                        Very little text extracted ({doc.char_count} chars). Classification quality may be low.
+                      </p>
+                    )}
+                    {doc.ocr_used && doc.extraction_status === "success" && (
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        OCR was required. Extraction may contain errors.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {doc.document_type === "DATA_SHEET" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={Boolean(doc.data_sheet_user_confirmed)}
+                          onClick={async () => {
+                            setError(null)
+                            try {
+                              await apiPatch(`/api/v1/shipment-documents/${doc.id}/data-sheet-confirmation`, {
+                                confirmed: true,
+                              })
+                              await loadDocuments()
+                            } catch (e: unknown) {
+                              setError(formatApiError(e as ApiClientError))
+                            }
+                          }}
+                        >
+                          {doc.data_sheet_user_confirmed
+                            ? "Confirmed as evidence"
+                            : "Confirm data sheet usable as evidence"}
+                        </Button>
+                      )}
+                      {doc.extraction_status && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={reprocessingId === doc.id}
+                          onClick={async () => {
+                            setReprocessingId(doc.id)
+                            setError(null)
+                            try {
+                              await apiPost(`/api/v1/shipment-documents/${doc.id}/reprocess`, {})
+                              await loadDocuments()
+                            } catch (e: unknown) {
+                              setError(formatApiError(e as ApiClientError))
+                            } finally {
+                              setReprocessingId(null)
+                            }
+                          }}
+                        >
+                          {reprocessingId === doc.id ? "Reprocessing…" : "Re-extract"}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <span className="text-sm text-muted-foreground shrink-0" aria-label={`Type: ${documentTypeLabel(doc.document_type)}`}>
                     {documentTypeLabel(doc.document_type)}

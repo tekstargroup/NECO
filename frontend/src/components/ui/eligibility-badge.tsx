@@ -2,7 +2,7 @@
  * EligibilityBadge - Sprint 12
  * 
  * Shows shipment eligibility status.
- * Conservative: "Eligible" or "Not eligible" with missing requirements.
+ * Conservative: readiness wording (not "eligible" as a legal guarantee).
  */
 
 import { cn } from "@/lib/utils"
@@ -17,7 +17,7 @@ export function EligibilityBadge({ eligible, missingRequirements = [], className
   if (eligible) {
     return (
       <span className={cn("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-300", className)}>
-        Eligible
+        Ready to run analysis
       </span>
     )
   }
@@ -25,7 +25,7 @@ export function EligibilityBadge({ eligible, missingRequirements = [], className
   return (
     <div className={cn("flex flex-col gap-1", className)}>
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-300 w-fit">
-        Not eligible
+        Not ready — requirements missing
       </span>
       {missingRequirements.length > 0 && (
         <span className="text-xs text-muted-foreground">

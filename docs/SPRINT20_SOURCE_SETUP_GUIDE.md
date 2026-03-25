@@ -2,11 +2,11 @@
 
 **Non-technical leader?** Start here instead: **[REGULATORY_SOURCES_LEADER_PLAYBOOK.md](REGULATORY_SOURCES_LEADER_PLAYBOOK.md)** — checklist, no jargon.
 
-**Purpose:** Make every regulatory source return real data. Right now many return empty — this guide tells you exactly what to do for each.
+**Purpose:** Make every regulatory source return real data. **March 2026:** URLs, poller behavior, and docs were updated so **most** sources return data in routine tests; a few remain **empty by design** (USITC HTS diff) or **network-dependent** (USDA FSIS). This guide is the setup checklist; the full change log is in **[SPRINT20_PROGRESS.md](SPRINT20_PROGRESS.md)** (*Source validation, feed hardening & docs*).
 
 **Sprint context:** Only Sprint 13 is currently in progress (separate agent). Sprints 14–19 are not yet executed. Sprint 20 (Compliance Signal Engine) is this sprint — source validation and setup.
 
-**Last updated:** March 18, 2026
+**Last updated:** March 24, 2026
 
 ---
 
@@ -15,12 +15,12 @@
 | Phase | Scope | Status |
 |-------|--------|--------|
 | **Phase 1** | Base pipeline (schema, poller, classification, scoring, PSC alerts) | Done |
-| **Phase 2** | Source tiers 1–8 (config + handlers) | Done — but many sources return empty |
+| **Phase 2** | Source tiers 1–8 (config + handlers) | Done — source URLs and poller hardened March 2026 (see progress log) |
 | **Phase 3** | GAPs 1–10 | Done |
 | **Phase 4** | Migration 012 | Done |
 | **Phase 5** | Pinned priorities | Done |
 
-**Source tiers:** 1 (CBP, FR, USTR, CROSS) → 2 (OFAC, FDA, USDA, BIS, ITA) → 3 (WTO, EU, WCO) → 4 (White House, Congress) → 5 (Quota, UBR) → 6 (FreightWaves, JOC, SupplyChainDive, Flexport) → 7 (CBP CROSS vectorization, pending) → 8 (Importer HTS usage, internal).
+**Source tiers:** 1 (CBP, FR, USTR, CROSS) → 2 (OFAC, FDA, USDA, BIS, ITA) → 3 (WTO, EU, WCO) → 4 (White House, Congress) → 5 (Quota, UBR) → 6 (FreightWaves, JOC, SupplyChainDive, Loadstar) → 7 (CBP CROSS vectorization, pending) → 8 (Importer HTS usage, internal).
 
 ---
 
@@ -47,14 +47,14 @@
 
 ---
 
-### Tier 1 — Needs Fix or Research
+### Tier 1 — Special cases (not “broken”)
 
-| Source | Type | Issue | What to do |
+| Source | Type | Notes | What to do |
 |--------|------|-------|------------|
-| **CBP_DUTY_RATES** | RSS | Often 0 items | URL may be correct; feed may be sparse. **Test:** `python scripts/test_one_source.py CBP_DUTY_RATES`. If still empty, check https://www.cbp.gov/rss for alternate duty feeds. |
-| **CBP_LEGAL_DECISIONS** | RSS | Often 0 items | Same as above. Feed may publish rarely. |
-| **USITC_HTS** | API | Diff-based; only emits when release changes | Handler uses `https://hts.usitc.gov/reststop/releaseList` or search API. May need to verify handler logic — check `regulatory_feed_poller.py` usitc_hts handler. |
-| **CBP_CROSS** | XML export | Use "What's New" XML/CSV downloads | **Setup:** 1) Right-click XML button on rulings.cbp.gov → Copy link. 2) Add `CBP_CROSS_XML_URL=<url>` to .env. Or temporarily: `CBP_CROSS_LOCAL_FILE=/path/to/latest_rulings_ALL.xml` to test with a local file. |
+| **CBP_DUTY_RATES** | RSS | Uses **main trade RSS** with CSMS (deduped by URL) | **Resolved March 2026.** Empty in DB only if that URL already ingested under another source name. |
+| **CBP_LEGAL_DECISIONS** | RSS | Same as duty rates | **Resolved March 2026** — shared trade feed by design. |
+| **USITC_HTS** | API | Diff-based; **empty is normal** until HTS release changes | Handler: `https://hts.usitc.gov/reststop/releaseList` — see `regulatory_feed_poller.py` (`usitc_hts`). |
+| **CBP_CROSS** | XML export | Prefer XML over HTML search | **Setup:** `CBP_CROSS_XML_URL` or `CBP_CROSS_LOCAL_FILE` — [CBP_CROSS_SETUP.md](CBP_CROSS_SETUP.md). |
 
 ---
 
@@ -68,30 +68,30 @@
 
 ---
 
-### Tier 2 — Needs Fix
+### Tier 2 — USDA FSIS only (network-sensitive)
 
 | Source | Type | Issue | What to do |
 |--------|------|-------|------------|
-| **USDA_FSIS** | RSS | 403 or wrong URL | **Fix:** Update URL to `https://www.fsis.usda.gov/fsis-content/rss/news-release` or `https://www.fsis.usda.gov/fsis-content/rss/recalls`. Edit `sources_config.json`. If 403 persists, try FSIS API: https://www.fsis.usda.gov/api |
-| **ITA_ADCVD** | RSS | URL may be wrong | Current: `https://www.cbp.gov/rss/trade-adcvd`. **Test** — if 404, search CBP RSS index for AD/CVD feed. |
+| **USDA_FSIS** | API + RSS fallback | Some networks get HTML “Access Denied” | Poller tries recall API then FSIS RSS with browser-like headers. Try `REGULATORY_NO_PROXY=1`, different network, or GovDelivery — see [SPRINT20_PROGRESS.md](SPRINT20_PROGRESS.md). |
+| **ITA_ADCVD** | RSS | — | **Working:** `https://www.cbp.gov/rss/trade-adcvd` (verified March 2026). |
 
 ---
 
-### Tier 3 — Needs Fix
+### Tier 3 — Working (verify if you fork)
 
-| Source | Type | Issue | What to do |
-|--------|------|-------|------------|
-| **WTO_DISPUTES** | RSS | May 404/500 | Current: `http://www.wto.org/library/rss/latest_news_e.xml`. Official gateway: https://www.wto.org/english/res_e/webcas_e/rss_e.htm. **Test** — if fail, WTO may have moved feeds. |
-| **EU_TAXUD** | RSS | 404 — EU moved domain | **Fix:** Update URL to `https://taxation-customs.ec.europa.eu/node/2/rss_en` (confirmed working). Edit `sources_config.json`. |
-| **WCO_NEWS** | Scrape | Slow/timeout | May work; increase timeout if needed. |
+| Source | Type | Notes |
+|--------|------|--------|
+| **WTO_DISPUTES** | RSS | `http://www.wto.org/library/rss/latest_news_e.xml` — gateway: https://www.wto.org/english/res_e/webcas_e/rss_e.htm |
+| **EU_TAXUD** | RSS | `https://taxation-customs.ec.europa.eu/node/2/rss_en` |
+| **WCO_NEWS** | Scrape | Can be slow; retry if timeout. |
 
 ---
 
-### Tier 4 — Needs Setup
+### Tier 4 — Congress API key only
 
 | Source | Type | Issue | What to do |
 |--------|------|-------|------------|
-| **WHITE_HOUSE_BRIEFING** | RSS | 404 — feed moved | **Research:** Visit https://www.whitehouse.gov/briefing-room/, look for RSS link in page source or footer. May need to use different URL or accept no RSS. |
+| **WHITE_HOUSE_BRIEFING** | RSS | ✅ Working | **URL:** `https://www.whitehouse.gov/presidential-actions/feed/` |
 | **CONGRESS_GOV** | API | Requires API key | **Setup:** 1. Go to https://api.congress.gov/sign-up 2. Register for free API key 3. Add to `.env`: `CONGRESS_API_KEY=your_key` 4. Restart backend |
 
 ---
@@ -101,18 +101,18 @@
 | Source | Type | Issue | What to do |
 |--------|------|-------|------------|
 | **CBP_QUOTA_BULLETINS** | RSS | Same URL as CBP_CSMS; deduped | No fix — intentionally shares trade feed. Will show 0 new when CSMS already polled. |
-| **CBP_UBR** | RSS | May 404 | Current: `https://www.cbp.gov/rss/trade/unified-business-resumption-messaging`. **Test** — if 404, check CBP RSS index. |
+| **CBP_UBR** | RSS | Shares main trade feed | Same URL as CSMS (`https://www.cbp.gov/rss/trade`); deduped in DB. |
 
 ---
 
-### Tier 6 — Needs Fix
+### Tier 6 — Working
 
-| Source | Type | Issue | What to do |
-|--------|------|-------|------------|
-| **FREIGHTWAVES** | RSS | ✅ Working | None |
-| **JOC** | RSS | 404 — old URL | **Fix:** Update URL to `https://www.joc.com/api/rssfeed` (All News). Edit `sources_config.json`. |
-| **SUPPLY_CHAIN_DIVE** | RSS | 404 — no native RSS | **Research:** Site may not offer RSS. Options: (1) Use rss.app to generate feed from https://www.supplychaindive.com/ (2) Or remove source if not critical |
-| **FLEXPORT_BLOG** | RSS | 404 — feed may have moved | **Research:** Visit https://www.flexport.com/blog/, check for RSS link. If none, consider removing or using third-party RSS generator. |
+| Source | Type | Notes |
+|--------|------|--------|
+| **FREIGHTWAVES** | RSS | `https://www.freightwaves.com/feed` |
+| **JOC** | RSS | `https://www.joc.com/api/rssfeed` |
+| **SUPPLY_CHAIN_DIVE** | RSS | `https://www.supplychaindive.com/feeds/news/` |
+| **LOADSTAR** | RSS | `https://theloadstar.com/feed/` (replaces **FLEXPORT_BLOG**; new `raw_signals` use source name **LOADSTAR**). |
 
 ---
 
@@ -122,11 +122,14 @@
 
 - [ ] **CONGRESS_GOV:** Register at https://api.congress.gov/sign-up, add `CONGRESS_API_KEY` to `backend/.env`
 
-### 2. URL fixes (edit sources_config.json)
+### 2. URL fixes (already applied in `sources_config.json` — verify if you fork)
 
-- [ ] **EU_TAXUD:** Change URL to `https://taxation-customs.ec.europa.eu/node/2/rss_en`
-- [ ] **JOC:** Change URL to `https://www.joc.com/api/rssfeed`
-- [ ] **USDA_FSIS:** Change URL to `https://www.fsis.usda.gov/fsis-content/rss/news-release` (or `/recalls`)
+- [ ] **EU_TAXUD:** `https://taxation-customs.ec.europa.eu/node/2/rss_en`
+- [ ] **JOC:** `https://www.joc.com/api/rssfeed`
+- [ ] **WHITE_HOUSE_BRIEFING:** `https://www.whitehouse.gov/presidential-actions/feed/`
+- [ ] **SUPPLY_CHAIN_DIVE:** `https://www.supplychaindive.com/feeds/news/`
+- [ ] **LOADSTAR:** `https://theloadstar.com/feed/`
+- [ ] **USDA_FSIS:** API `https://www.fsis.usda.gov/fsis/api/recall/v/1` with RSS fallback in poller
 
 ### 3. Test each source
 
@@ -145,15 +148,15 @@ python scripts/test_one_source.py CONGRESS_GOV   # after adding API key
 python scripts/test_regulatory_sources.py
 ```
 
-### 5. Sources that need manual research
+### 5. Sources that may still need attention
 
-| Source | Research task |
-|-------|---------------|
-| CBP_CROSS | Inspect rulings.cbp.gov network calls; consider Playwright if no API |
-| WHITE_HOUSE_BRIEFING | Find current RSS URL on whitehouse.gov |
-| SUPPLY_CHAIN_DIVE | Confirm if RSS exists; else use rss.app or remove |
-| FLEXPORT_BLOG | Confirm if RSS exists |
-| WTO_DISPUTES | Verify library RSS works; check WTO gateway if not |
+| Source | Notes |
+|-------|--------|
+| CBP_CROSS | Prefer `CBP_CROSS_XML_URL` or local file; search HTML URL is a fallback |
+| USDA_FSIS | Recall API + RSS fallback; some networks return HTML “Access Denied” — try another network or GovDelivery |
+| USITC_HTS | Diff-based — **empty is normal** until HTS release changes |
+| LOADSTAR | If feed moves, update `sources_config.json` |
+| WTO_DISPUTES | If library RSS fails, check WTO RSS gateway page |
 
 ---
 
@@ -175,8 +178,8 @@ If RSS/API is unavailable, some agencies offer **email subscriptions** that you 
 
 | File | Purpose |
 |------|---------|
-| `backend/config/sources_config.json` | Update URLs for EU_TAXUD, JOC, USDA_FSIS |
-| `backend/.env` | Add CONGRESS_API_KEY |
+| `backend/config/sources_config.json` | All Sprint 20 source URLs and names (see [SPRINT20_PROGRESS.md](SPRINT20_PROGRESS.md)) |
+| `backend/.env` | `CONGRESS_API_KEY`, optional `CBP_CROSS_XML_URL` / `CBP_CROSS_LOCAL_FILE`, `REGULATORY_NO_PROXY=1` if needed |
 
 ---
 
@@ -184,11 +187,11 @@ If RSS/API is unavailable, some agencies offer **email subscriptions** that you 
 
 **Sprint 20 source validation is done when:**
 
-1. All Tier 1 sources that have working URLs/APIs return data (or are confirmed sparse by design)
+1. All Tier 1 sources that have working URLs/APIs return data (or are confirmed sparse by design — shared CBP trade RSS, USITC diff)
 2. CONGRESS_GOV works with API key
-3. EU_TAXUD, JOC, USDA_FSIS return data after URL fix
-4. CBP_CROSS: either fixed or documented as "requires Playwright / manual research"
-5. Remaining broken sources (White House, SupplyChainDive, Flexport, WTO) either fixed or explicitly deferred with reason
+3. EU_TAXUD, JOC, White House, Supply Chain Dive, Loadstar URLs applied and verified in `test_regulatory_sources.py` (March 2026)
+4. CBP_CROSS: XML URL or local file documented; HTML-only fallback understood
+5. USDA_FSIS / USITC_HTS: team understands when **empty is expected** (network / diff-based) — see [SPRINT20_PROGRESS.md](SPRINT20_PROGRESS.md)
 
 ---
 

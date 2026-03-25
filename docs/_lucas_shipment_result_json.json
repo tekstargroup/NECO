@@ -1,0 +1,604 @@
+{
+  "items": [
+    {
+      "id": "1b66a673-6973-481e-9fe9-7b300164ff69",
+      "psc": null,
+      "duty": null,
+      "label": "EndoRobotics_ROBOPERA",
+      "value": null,
+      "hts_code": null,
+      "regulatory": [],
+      "classification": {
+        "error": "No candidates found",
+        "status": "NO_CONFIDENT_MATCH",
+        "success": false,
+        "metadata": {
+          "engine_version": "v1.0",
+          "product_analysis": {
+            "rationale": "Product family identified as: unknown. All required attributes present.",
+            "product_type": "unknown",
+            "source_tokens": {},
+            "product_family": "unknown",
+            "suggested_chapters": [],
+            "analysis_confidence": 1.0,
+            "extracted_attributes": {},
+            "missing_required_attributes": []
+          },
+          "processing_time_ms": 448
+        },
+        "candidates": [],
+        "rule_based_assessment": {
+          "htsus": null,
+          "heading": null,
+          "warnings": [
+            "Missing potentially material facts: used_on_humans, is_medical_field, performs_direct_action, interacts_with_body",
+            "Unable to determine classification confidently from supplied facts.",
+            "Ask clarifying questions about intended use, patient contact, and whether article performs direct procedural function."
+          ],
+          "confidence": "low",
+          "subheading": null,
+          "justification": [
+            "Insufficient facts for reliable classification."
+          ],
+          "reasoning_path": [
+            "No decisive rule matched."
+          ],
+          "alternative_headings_considered": [
+            "9018",
+            "9023",
+            "8479"
+          ]
+        }
+      },
+      "needs_supplemental_evidence": false,
+      "supplemental_evidence_source": null
+    },
+    {
+      "id": "141ee6e5-6801-4fd7-9063-d18ab815ef47",
+      "psc": null,
+      "duty": {
+        "flags": [
+          "MISSING_DUTY",
+          "REVIEW_REQUIRED"
+        ],
+        "hts_code": "7209150000",
+        "source_hts_col2": null,
+        "explanation_col2": "Column 2 duty not found in the inheritance chain for 7209.15.00.00 (checked through 6-digit level). Review required.",
+        "explanation_path": "Checked: 7209.15.00.00 → 7209.15.00 → 7209.15",
+        "inheritance_path": [
+          "7209150000",
+          "72091500",
+          "720915"
+        ],
+        "resolved_col2_raw": null,
+        "source_level_col2": "none",
+        "source_hts_general": null,
+        "source_hts_special": null,
+        "explanation_general": "General duty not found in the inheritance chain for 7209.15.00.00 (checked through 6-digit level). Review required.",
+        "explanation_special": "Special duty not found in the inheritance chain for 7209.15.00.00 (checked through 6-digit level). Review required.",
+        "resolved_general_raw": null,
+        "resolved_special_raw": null,
+        "source_level_general": "none",
+        "source_level_special": "none"
+      },
+      "label": "EndoRobotics_Articulated Gripper reduced",
+      "value": null,
+      "hts_code": "7209150000",
+      "regulatory": [
+        {
+          "item_id": "141ee6e5-6801-4fd7-9063-d18ab815ef47",
+          "outcome": "CONDITIONAL",
+          "regulator": "FDA",
+          "explanation_text": "FDA applicability depends on is medical device, is food cosmetic supplement, is radiation emitting electronic. Provided documents do not confirm or negate applicability. Review required.",
+          "condition_evaluations": [
+            {
+              "state": "UNKNOWN",
+              "condition_id": "IS_MEDICAL_DEVICE",
+              "evidence_refs": []
+            },
+            {
+              "state": "UNKNOWN",
+              "condition_id": "IS_FOOD_COSMETIC_SUPPLEMENT",
+              "evidence_refs": []
+            },
+            {
+              "state": "UNKNOWN",
+              "condition_id": "IS_RADIATION_EMITTING_ELECTRONIC",
+              "evidence_refs": []
+            }
+          ],
+          "triggered_by_hts_code": "7209150000"
+        },
+        {
+          "item_id": "141ee6e5-6801-4fd7-9063-d18ab815ef47",
+          "outcome": "CONDITIONAL",
+          "regulator": "LACEY_ACT",
+          "explanation_text": "LACEY_ACT applicability depends on contains plant based materials. Provided documents do not confirm or negate applicability. Review required.",
+          "condition_evaluations": [
+            {
+              "state": "UNKNOWN",
+              "condition_id": "CONTAINS_PLANT_BASED_MATERIALS",
+              "evidence_refs": []
+            }
+          ],
+          "triggered_by_hts_code": "7209150000"
+        }
+      ],
+      "classification": {
+        "error": "NO_CONFIDENT_MATCH",
+        "status": "NO_CONFIDENT_MATCH",
+        "success": false,
+        "metadata": {
+          "gating_mode": null,
+          "noise_ratio": 0.0,
+          "reason_code": "LOW_SIMILARITY_GATE",
+          "headings_used": [],
+          "applied_priors": [],
+          "engine_version": "v1.0",
+          "expanded_terms": [],
+          "noisy_excluded": 0,
+          "threshold_used": "0.18",
+          "applied_filters": [
+            "exclude_9903_text",
+            "exclude_ch98_99",
+            "exclude_noisy_desc"
+          ],
+          "best_similarity": 0.10924369841814041,
+          "candidate_counts": {
+            "expanded": 0,
+            "post_score": 5,
+            "pre_filter": 46,
+            "post_filter": 20,
+            "primary_8518": 20
+          },
+          "post_score_count": 5,
+          "pre_filter_count": 46,
+          "product_analysis": {
+            "rationale": "Product family identified as: unknown. All required attributes present.",
+            "product_type": "unknown",
+            "source_tokens": {},
+            "product_family": "unknown",
+            "suggested_chapters": [],
+            "analysis_confidence": 1.0,
+            "extracted_attributes": {},
+            "missing_required_attributes": []
+          },
+          "post_filter_count": 20,
+          "processing_time_ms": 149,
+          "best_8518_similarity": null,
+          "noise_filter_suspended": true,
+          "total_candidates_found": 20
+        },
+        "candidates": [
+          {
+            "hts_code": "7209150000",
+            "final_score": 0.03739495873451233,
+            "hts_chapter": "72",
+            "selected_rate": null,
+            "score_components": {
+              "duty_penalty": 0.0,
+              "special_bonus": 0.0,
+              "similarity_raw": 0.10924369841814041,
+              "hts_match_bonus": 0.0,
+              "confidence_penalty": 0.05,
+              "similarity_contribution": 0.08739495873451233
+            },
+            "similarity_score": 0.10924369841814041,
+            "duty_rate_column2": "20%",
+            "duty_rate_general": "20%",
+            "duty_rate_special": null,
+            "tariff_text_short": "600 mm or more, cold-rolled (cold-reduced), not clad, plated\nor coated:\n7209\nIn coils, not further w",
+            "selected_rate_type": null
+          },
+          {
+            "hts_code": "0709201010",
+            "final_score": 0.026433122158050534,
+            "hts_chapter": "07",
+            "selected_rate": null,
+            "score_components": {
+              "duty_penalty": 0.0,
+              "special_bonus": 0.0,
+              "similarity_raw": 0.09554140269756317,
+              "hts_match_bonus": 0.0,
+              "confidence_penalty": 0.05,
+              "similarity_contribution": 0.07643312215805054
+            },
+            "similarity_score": 0.09554140269756317,
+            "duty_rate_column2": null,
+            "duty_rate_general": "5%",
+            "duty_rate_special": null,
+            "tariff_text_short": "Asparagus:\n0709.20\nNot reduced in size, entered during the period from\nSeptember 15 to November 15, ",
+            "selected_rate_type": null
+          },
+          {
+            "hts_code": "7306305020",
+            "final_score": 0.022131145000457764,
+            "hts_chapter": "73",
+            "selected_rate": null,
+            "score_components": {
+              "duty_penalty": 0.0,
+              "special_bonus": 0.0,
+              "similarity_raw": 0.0901639312505722,
+              "hts_match_bonus": 0.0,
+              "confidence_penalty": 0.05,
+              "similarity_contribution": 0.07213114500045777
+            },
+            "similarity_score": 0.0901639312505722,
+            "duty_rate_column2": "5.5%",
+            "duty_rate_general": "5.5%",
+            "duty_rate_special": null,
+            "tariff_text_short": "Other, cold-drawn..............................................\n15\nkg\nOther, cold-rolled (cold-reduc",
+            "selected_rate_type": null
+          },
+          {
+            "hts_code": "2004908565",
+            "final_score": 0.015573769807815552,
+            "hts_chapter": "20",
+            "selected_rate": null,
+            "score_components": {
+              "duty_penalty": 0.0,
+              "special_bonus": 0.0,
+              "similarity_raw": 0.08196721225976944,
+              "hts_match_bonus": 0.0,
+              "confidence_penalty": 0.05,
+              "similarity_contribution": 0.06557376980781555
+            },
+            "similarity_score": 0.08196721225976944,
+            "duty_rate_column2": "35%",
+            "duty_rate_general": "11.2%",
+            "duty_rate_special": null,
+            "tariff_text_short": "60\nkg\nGarlic:\nPeeled clove garlic, whether or not individually\nquick frozen.........................",
+            "selected_rate_type": null
+          },
+          {
+            "hts_code": "0704106000",
+            "final_score": 0.012015503644943235,
+            "hts_chapter": "07",
+            "selected_rate": null,
+            "score_components": {
+              "duty_penalty": 0.0,
+              "special_bonus": 0.0,
+              "similarity_raw": 0.07751937955617905,
+              "hts_match_bonus": 0.0,
+              "confidence_penalty": 0.05,
+              "similarity_contribution": 0.06201550364494324
+            },
+            "similarity_score": 0.07751937955617905,
+            "duty_rate_column2": null,
+            "duty_rate_general": "14%",
+            "duty_rate_special": null,
+            "tariff_text_short": "PA, PE, S, SG)\n10%\n2/\nkg..............\nCut, sliced or otherwise reduced in size................\n0704",
+            "selected_rate_type": null
+          }
+        ],
+        "error_reason": "Best similarity 0.1092 below confidence threshold (0.18). No confident match available.",
+        "primary_candidate": {
+          "hts_code": "7209150000",
+          "final_score": 0.03739495873451233,
+          "hts_chapter": "72",
+          "selected_rate": null,
+          "score_components": {
+            "duty_penalty": 0.0,
+            "special_bonus": 0.0,
+            "similarity_raw": 0.10924369841814041,
+            "hts_match_bonus": 0.0,
+            "confidence_penalty": 0.05,
+            "similarity_contribution": 0.08739495873451233
+          },
+          "similarity_score": 0.10924369841814041,
+          "duty_rate_column2": "20%",
+          "duty_rate_general": "20%",
+          "duty_rate_special": null,
+          "tariff_text_short": "600 mm or more, cold-rolled (cold-reduced), not clad, plated\nor coated:\n7209\nIn coils, not further w",
+          "selected_rate_type": null
+        },
+        "rule_based_assessment": {
+          "htsus": null,
+          "heading": null,
+          "warnings": [
+            "Missing potentially material facts: used_on_humans, is_medical_field, performs_direct_action, interacts_with_body",
+            "Unable to determine classification confidently from supplied facts.",
+            "Ask clarifying questions about intended use, patient contact, and whether article performs direct procedural function."
+          ],
+          "confidence": "low",
+          "subheading": null,
+          "justification": [
+            "Insufficient facts for reliable classification."
+          ],
+          "reasoning_path": [
+            "No decisive rule matched."
+          ],
+          "alternative_headings_considered": [
+            "9018",
+            "9023",
+            "8479"
+          ]
+        }
+      },
+      "needs_supplemental_evidence": false,
+      "supplemental_evidence_source": null
+    },
+    {
+      "id": "a6fea1d7-7f2b-425f-a72a-b41ae34b2c31",
+      "psc": null,
+      "duty": null,
+      "label": "EndoRobotics_EndoCubot",
+      "value": null,
+      "hts_code": null,
+      "regulatory": [],
+      "classification": {
+        "error": "CLARIFICATION_REQUIRED",
+        "status": "CLARIFICATION_REQUIRED",
+        "success": false,
+        "metadata": {
+          "reason_code": "MISSING_REQUIRED_ATTRIBUTES",
+          "engine_version": "v1.0",
+          "product_analysis": {
+            "rationale": "Product family identified as: medical_devices. Extracted attributes: intended_medical_use=surgical, is_electrical=True, is_patient_contacting=True. Missing required attributes: is_disposable.",
+            "product_type": "medical devices",
+            "source_tokens": {
+              "is_electrical": [
+                "A",
+                "Practice",
+                "stomach",
+                "Interface:",
+                "(Stomach"
+              ],
+              "intended_medical_use": [
+                "A",
+                "the",
+                "therapy",
+                "Electrosurgical"
+              ],
+              "is_patient_contacting": [
+                "A",
+                "Patient"
+              ]
+            },
+            "product_family": "medical_devices",
+            "suggested_chapters": [
+              {
+                "reason": "medical_devices typically classified in Chapter 90 (see chapter_clusters.py for rationale)",
+                "chapter": 90,
+                "confidence": 0.85
+              }
+            ],
+            "analysis_confidence": 0.7522222222222221,
+            "extracted_attributes": {
+              "is_electrical": {
+                "value": true,
+                "confidence": 0.7416666666666666,
+                "source_tokens": [
+                  "A",
+                  "Practice",
+                  "stomach",
+                  "Interface:",
+                  "(Stomach"
+                ]
+              },
+              "intended_medical_use": {
+                "value": "surgical",
+                "confidence": 0.7833333333333333,
+                "source_tokens": [
+                  "A",
+                  "the",
+                  "therapy",
+                  "Electrosurgical"
+                ]
+              },
+              "is_patient_contacting": {
+                "value": true,
+                "confidence": 0.7416666666666666,
+                "source_tokens": [
+                  "A",
+                  "Patient"
+                ]
+              }
+            },
+            "missing_required_attributes": [
+              "is_disposable"
+            ]
+          },
+          "processing_time_ms": 1,
+          "rule_based_heading": "9023",
+          "suggested_chapters": [
+            {
+              "reason": "medical_devices typically classified in Chapter 90 (see chapter_clusters.py for rationale)",
+              "chapter": 90,
+              "confidence": 0.85
+            }
+          ],
+          "rule_based_confidence": "high",
+          "detected_product_family": "medical_devices",
+          "required_attributes_count": 4,
+          "missing_required_attributes": [
+            "is_disposable"
+          ],
+          "required_attribute_map_key_used": "medical_devices",
+          "clarification_responses_provided": []
+        },
+        "questions": [
+          {
+            "question": "Is this device disposable or single-use (yes/no)? Disposable vs reusable affects classification - disposable medical devices may be classified differently depending on material and use.",
+            "attribute": "is_disposable",
+            "value_options": [
+              "true",
+              "false"
+            ]
+          }
+        ],
+        "candidates": [],
+        "error_reason": "Required classification attributes missing: is_disposable",
+        "blocking_reason": "Required classification attributes missing: is_disposable",
+        "product_analysis": {
+          "rationale": "Product family identified as: medical_devices. Extracted attributes: intended_medical_use=surgical, is_electrical=True, is_patient_contacting=True. Missing required attributes: is_disposable.",
+          "product_type": "medical devices",
+          "source_tokens": {
+            "is_electrical": [
+              "A",
+              "Practice",
+              "stomach",
+              "Interface:",
+              "(Stomach"
+            ],
+            "intended_medical_use": [
+              "A",
+              "the",
+              "therapy",
+              "Electrosurgical"
+            ],
+            "is_patient_contacting": [
+              "A",
+              "Patient"
+            ]
+          },
+          "product_family": "medical_devices",
+          "suggested_chapters": [
+            {
+              "reason": "medical_devices typically classified in Chapter 90 (see chapter_clusters.py for rationale)",
+              "chapter": 90,
+              "confidence": 0.85
+            }
+          ],
+          "analysis_confidence": 0.7522222222222221,
+          "extracted_attributes": {
+            "is_electrical": {
+              "value": true,
+              "confidence": 0.7416666666666666,
+              "source_tokens": [
+                "A",
+                "Practice",
+                "stomach",
+                "Interface:",
+                "(Stomach"
+              ]
+            },
+            "intended_medical_use": {
+              "value": "surgical",
+              "confidence": 0.7833333333333333,
+              "source_tokens": [
+                "A",
+                "the",
+                "therapy",
+                "Electrosurgical"
+              ]
+            },
+            "is_patient_contacting": {
+              "value": true,
+              "confidence": 0.7416666666666666,
+              "source_tokens": [
+                "A",
+                "Patient"
+              ]
+            }
+          },
+          "missing_required_attributes": [
+            "is_disposable"
+          ]
+        },
+        "rule_based_assessment": {
+          "htsus": "9023.00.00",
+          "heading": "9023",
+          "warnings": [],
+          "confidence": "high",
+          "subheading": "9023.00.00",
+          "justification": [
+            "Article is designed for training/demonstration.",
+            "Not used on humans for diagnosis or treatment.",
+            "Heading 9023 is more specific for demonstrational apparatus."
+          ],
+          "reasoning_path": [
+            "Rule 1 matched: training purpose + not used on humans."
+          ],
+          "alternative_headings_considered": [
+            "9018 (rejected: no diagnostic or therapeutic use on patients)",
+            "8479 (rejected: 9023 is more specific)"
+          ]
+        }
+      },
+      "needs_supplemental_evidence": true,
+      "supplemental_evidence_source": null
+    }
+  ],
+  "blockers": [
+    "Regulatory evaluation FDA requires review",
+    "Regulatory evaluation LACEY_ACT requires review",
+    "Duty missing through 6-digit level for item 141ee6e5-6801-4fd7-9063-d18ab815ef47"
+  ],
+  "warnings": [
+    {
+      "type": "classification_error",
+      "item_id": "1b66a673-6973-481e-9fe9-7b300164ff69",
+      "message": "Classification engine error for item 1b66a673-6973-481e-9fe9-7b300164ff69: No candidates found"
+    },
+    {
+      "type": "classification_error",
+      "item_id": "141ee6e5-6801-4fd7-9063-d18ab815ef47",
+      "message": "Classification engine error for item 141ee6e5-6801-4fd7-9063-d18ab815ef47: NO_CONFIDENT_MATCH"
+    },
+    {
+      "type": "classification_error",
+      "item_id": "a6fea1d7-7f2b-425f-a72a-b41ae34b2c31",
+      "message": "Classification engine error for item a6fea1d7-7f2b-425f-a72a-b41ae34b2c31: CLARIFICATION_REQUIRED"
+    }
+  ],
+  "shipment_id": "88bbca3f-14d7-4143-8984-a173ffcb7378",
+  "evidence_map": {
+    "warnings": [
+      {
+        "type": "classification_error",
+        "item_id": "1b66a673-6973-481e-9fe9-7b300164ff69",
+        "message": "Classification engine error for item 1b66a673-6973-481e-9fe9-7b300164ff69: No candidates found"
+      },
+      {
+        "type": "classification_error",
+        "item_id": "141ee6e5-6801-4fd7-9063-d18ab815ef47",
+        "message": "Classification engine error for item 141ee6e5-6801-4fd7-9063-d18ab815ef47: NO_CONFIDENT_MATCH"
+      },
+      {
+        "type": "classification_error",
+        "item_id": "a6fea1d7-7f2b-425f-a72a-b41ae34b2c31",
+        "message": "Classification engine error for item a6fea1d7-7f2b-425f-a72a-b41ae34b2c31: CLARIFICATION_REQUIRED"
+      }
+    ],
+    "documents": [
+      {
+        "filename": "EndoRobotics_ROBOPERA.pdf",
+        "document_id": "01a584dd-ccd4-442b-b6df-6846eeadd7e1",
+        "document_type": "DATA_SHEET",
+        "extracted_text": "",
+        "structured_data": {
+          "text_preview": null,
+          "document_type": null
+        },
+        "evidence_pointers": []
+      },
+      {
+        "filename": "EndoRobotics_EndoCubot.pdf",
+        "document_id": "20dd52be-2e1a-4943-809e-9b475e2ff57e",
+        "document_type": "DATA_SHEET",
+        "extracted_text": "A New Solution in Simulator-based Endoscopic Training\nNew\nSolution\nAdvanced Robotic Endoscopy Simulator for\nPrecision and Lifelike Experience\nESD EMR Handling Practice Clip Closure Suture Closure\nEndoRobotics Co., Ltd.\nwww.endorobo.com +82.2.2039.3878 +82.70.8650.3879 info@endorobo.com\n\nFeatures\nSelectable organ location in both the stomach and colon\n．\nAntrum Middle Body Colon\n． ． ．\nIncisura Angularis Cardia Rectum\n． ． ．\nUser-Friendly Interface: Intuitive touch display for seamless operation\n．\nUniversal Compatibility: Compatible with all endoscope brands and devices\n．\nEndoscope Insertion Port\n．Realistic Patient Response: Simulates breathing, random gagging, and sneezing (Stomach & Colon)\nPrecise & Efficient Robotic Control: One-touch robotic positioning for accurate\n．\nlesion targeting\nLifelike Endoscopic Functions: Realistic inflation and suction for\n．\nan authentic experience\nComprehensive Training: Basic to Advanced endoscopic therapy training is\n．\navailable for all skill levels\nSimplified Electrosurgical Connection: No ground pad needed Touchscreen-based Interface\n．\nSpecification\nDimensions [mm] 660W x 330D x 360H\nWeight [kg] 19.8\nInput 85~264VAC, 47~63Hz\nPower supply 1.4A/114VAC , 0.85A/230VAC\nOutput 24V 3.2A 76.8W\nOperating Temperature [ºC] 10 ~ 30\nDisplay Touch display 8’’ Certification KC(KR), FCC(US) , CE(EU) , RoHS (EU)\nOrdering Information\nCategory Description Order Code\nHardware EndoCubot System Unit CM-100\nStomach General CH-101\nIncisura Angularis CH-102\nHolder\nColon CH-103\nRectum CH-104 Complete Set\nER-C100\nTissue Clip CF-101\nAcc Scope Tray CA-101\nPower Cable CC-101\nStomach Tissue PTG-101\nPhantom Tissue\nColon/Rectum Tissue PTC-101\n© 2025 EndoRobotics Co., Ltd. All rights reserved. ER-EC-SM-Rev.02",
+        "structured_data": {
+          "text_preview": "A New Solution in Simulator-based Endoscopic Training\nNew\nSolution\nAdvanced Robotic Endoscopy Simulator for\nPrecision and Lifelike Experience\nESD EMR Handling Practice Clip Closure Suture Closure\nEndoRobotics Co., Ltd.\nwww.endorobo.com +82.2.2039.3878 +82.70.8650.3879 info@endorobo.com\n\nFeatures\nSelectable organ location in both the stomach and colon\n．\nAntrum Middle Body Colon\n． ． ．\nIncisura Angularis Cardia Rectum\n． ． ．\nUser-Friendly Interface: Intuitive touch display for seamless operation\n．\nU",
+          "document_type": "other"
+        },
+        "evidence_pointers": []
+      },
+      {
+        "filename": "EndoRobotics_Articulated Gripper reduced.pdf",
+        "document_id": "516bb5f0-a503-4d59-adf2-f20ed97594d7",
+        "document_type": "DATA_SHEET",
+        "extracted_text": "",
+        "structured_data": {
+          "text_preview": null,
+          "document_type": null
+        },
+        "evidence_pointers": []
+      }
+    ],
+    "files_not_found": false,
+    "extraction_errors": []
+  },
+  "generated_at": "2026-03-24T16:11:06.889712",
+  "review_status": "REVIEW_REQUIRED"
+}

@@ -4,7 +4,7 @@ ShipmentDocument model - Sprint 12
 Links documents to shipments with S3 metadata (immutable blobs).
 """
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum as SQLEnum, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Enum as SQLEnum, Text, Boolean, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -64,12 +64,23 @@ class ShipmentDocument(Base):
     # Extracted data (cached after processing)
     extracted_text = Column(Text)  # Full extracted text
     structured_data = Column(JSONB)  # Structured data (JSONB)
+
+    # Ingestion observability (Sprint B)
+    extraction_method = Column(String(32), nullable=True)  # pdf_text | ocr | mixed
+    ocr_used = Column(Boolean, nullable=True)
+    page_count = Column(Integer, nullable=True)
+    char_count = Column(Integer, nullable=True)
+    table_detected = Column(Boolean, nullable=True)
+    extraction_status = Column(String(32), nullable=True)  # success | empty | partial | failed
+    usable_for_analysis = Column(Boolean, nullable=True)
+    data_sheet_user_confirmed = Column(Boolean, nullable=False, default=False)
     
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     
     # Relationships
     shipment = relationship("Shipment", back_populates="documents")
+    item_links = relationship("ShipmentItemDocument", back_populates="document")
     
     # Immutable: no update/delete of blob (soft delete via status if needed later)
     __table_args__ = (

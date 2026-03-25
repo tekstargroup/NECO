@@ -74,6 +74,9 @@ class ReviewRecord(Base):
     
     # Immutable snapshot (JSONB for flexibility)
     object_snapshot = Column(JSONB, nullable=False)
+
+    # Per-item review decisions: { item_id: { status, notes, updated_at, updated_by } } (Sprint E)
+    item_decisions = Column(JSONB, nullable=True)
     
     # HTS version (must match AUTHORITATIVE_HTS_VERSION_ID)
     hts_version_id = Column(String(36), nullable=False, index=True)

@@ -10,11 +10,12 @@ Centralized eligibility computation:
 from typing import List, Dict, Any
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, desc
 from sqlalchemy.orm import joinedload
 
 from app.models.shipment import Shipment
 from app.models.shipment_document import ShipmentDocument, ShipmentDocumentType
+from app.models.analysis import Analysis, AnalysisStatus
 
 # Eligibility requirements
 REQUIRED_FOR_ENTRY_SUMMARY_PATH = [ShipmentDocumentType.ENTRY_SUMMARY]
@@ -26,6 +27,38 @@ class ShipmentEligibilityService:
     
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _pending_classification_inputs(self, shipment_id: UUID) -> List[str]:
+        """
+        If the latest completed analysis still has open classification clarifications,
+        block a fresh run until the user supplies answers (re-run with clarification payload).
+        """
+        result = await self.db.execute(
+            select(Analysis)
+            .where(Analysis.shipment_id == shipment_id)
+            .order_by(desc(Analysis.created_at))
+            .limit(1)
+        )
+        analysis = result.scalar_one_or_none()
+        if not analysis or analysis.status != AnalysisStatus.COMPLETE or not analysis.result_json:
+            return []
+        msgs: List[str] = []
+        for it in analysis.result_json.get("items") or []:
+            cl = it.get("classification") or {}
+            if not isinstance(cl, dict):
+                continue
+            label = it.get("label") or it.get("id")
+            if cl.get("status") == "CLARIFICATION_REQUIRED":
+                msgs.append(
+                    f'Resolve classification clarifications for "{label}" (previous run) before starting analysis again.'
+                )
+                continue
+            qs = cl.get("questions") or []
+            if qs:
+                msgs.append(
+                    f'Open classification questions remain for "{label}"; re-run analysis with clarification answers.'
+                )
+        return msgs
     
     async def compute_eligibility(
         self,
@@ -35,8 +68,8 @@ class ShipmentEligibilityService:
         Compute eligibility for shipment analysis.
         
         Eligible if:
-        - Entry Summary present, OR
-        - (Commercial Invoice + Data Sheet) present
+        - Pre-Compliance shipments: at least one document uploaded (advisory analysis allowed)
+        - Entry-Compliance shipments: Entry Summary present OR (Commercial Invoice + Data Sheet) present
         
         Args:
             shipment_id: Shipment ID
@@ -51,7 +84,11 @@ class ShipmentEligibilityService:
         # Get shipment with documents
         result = await self.db.execute(
             select(Shipment)
-            .options(joinedload(Shipment.documents))
+            .options(
+                joinedload(Shipment.documents),
+                joinedload(Shipment.references),
+                joinedload(Shipment.items),
+            )
             .where(Shipment.id == shipment_id)
         )
         shipment = result.unique().scalar_one_or_none()
@@ -65,11 +102,58 @@ class ShipmentEligibilityService:
         
         # Get document types present
         doc_types = {doc.document_type for doc in shipment.documents}
+        ref_map = {str(ref.reference_type).upper(): str(ref.reference_value).upper() for ref in (shipment.references or [])}
+        shipment_type = ref_map.get("SHIPMENT_TYPE", "PRE_COMPLIANCE")
+        is_pre_compliance = shipment_type != "ENTRY_COMPLIANCE"
+
+        if is_pre_compliance:
+            if len(doc_types) > 0:
+                missing_coo_items = [
+                    item.label or f"Line item {idx + 1}"
+                    for idx, item in enumerate(shipment.items or [])
+                    if not (item.country_of_origin and str(item.country_of_origin).strip())
+                ]
+                if missing_coo_items:
+                    preview = ", ".join(missing_coo_items[:3])
+                    if len(missing_coo_items) > 3:
+                        preview += f" (+{len(missing_coo_items) - 3} more)"
+                    return {
+                        "eligible": False,
+                        "missing_requirements": [
+                            "Country of Origin is required for all pre-compliance line items before analysis can run",
+                            f"Missing COO: {preview}",
+                        ],
+                        "satisfied_path": None,
+                    }
+                pending = await self._pending_classification_inputs(shipment_id)
+                if pending:
+                    return {
+                        "eligible": False,
+                        "missing_requirements": pending,
+                        "satisfied_path": None,
+                    }
+                return {
+                    "eligible": True,
+                    "missing_requirements": [],
+                    "satisfied_path": "PRE_COMPLIANCE_DOCUMENTS"
+                }
+            return {
+                "eligible": False,
+                "missing_requirements": ["Upload at least one document to start pre-compliance analysis"],
+                "satisfied_path": None
+            }
         
         # Check Entry Summary path
         has_entry_summary = ShipmentDocumentType.ENTRY_SUMMARY in doc_types
         
         if has_entry_summary:
+            pending = await self._pending_classification_inputs(shipment_id)
+            if pending:
+                return {
+                    "eligible": False,
+                    "missing_requirements": pending,
+                    "satisfied_path": None,
+                }
             return {
                 "eligible": True,
                 "missing_requirements": [],
@@ -81,6 +165,13 @@ class ShipmentEligibilityService:
         has_data_sheet = ShipmentDocumentType.DATA_SHEET in doc_types
         
         if has_commercial_invoice and has_data_sheet:
+            pending = await self._pending_classification_inputs(shipment_id)
+            if pending:
+                return {
+                    "eligible": False,
+                    "missing_requirements": pending,
+                    "satisfied_path": None,
+                }
             return {
                 "eligible": True,
                 "missing_requirements": [],

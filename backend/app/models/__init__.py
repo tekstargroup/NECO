@@ -24,6 +24,7 @@ from .organization import Organization
 from .membership import Membership, UserRole
 from .shipment import Shipment, ShipmentStatus, ShipmentReference, ShipmentItem
 from .shipment_document import ShipmentDocument, ShipmentDocumentType
+from .shipment_item_document import ShipmentItemDocument, ItemDocumentMappingStatus
 from .analysis import Analysis, AnalysisStatus, RefusalReasonCode
 from .entitlement import Entitlement
 from .export import Export, ExportType, ExportStatus
@@ -79,6 +80,8 @@ __all__ = [
     "ShipmentItem",
     "ShipmentDocument",
     "ShipmentDocumentType",
+    "ShipmentItemDocument",
+    "ItemDocumentMappingStatus",
     "Analysis",
     "AnalysisStatus",
     "RefusalReasonCode",

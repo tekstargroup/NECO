@@ -1,6 +1,12 @@
 # NECO Regulatory Feeds — Leader Playbook
 
+**Last updated:** March 24, 2026
+
+**Doing this yourself (no separate engineer)?** Use **[REGULATORY_SOURCES_SOLO_CHECKLIST.md](REGULATORY_SOURCES_SOLO_CHECKLIST.md)** — test without the frontend, then paste results back to Cursor.
+
 **What this is:** A simple checklist so every government and trade news source can flow into NECO. No coding required for most steps.
+
+**Sprint 20 update (March 2026):** Engineering refreshed feed URLs, poller behavior (including USDA FSIS fallbacks and browser-like headers for picky sites), CLI test scripts, and Signal Health actions. The **single master list** of what changed is **[SPRINT20_PROGRESS.md](SPRINT20_PROGRESS.md)** → section *“Source validation, feed hardening & docs.”* This playbook stays focused on **what you do** in the app.
 
 **Why it matters:** NECO’s intelligence layer depends on these feeds. If a feed is broken or blocked, NECO misses updates that could affect your shipments, duties, and risk.
 
@@ -81,10 +87,10 @@ Copy this block to your IT / developer. They use the existing guides in `docs/` 
 | Source | What’s wrong (typical) | What to try |
 |--------|-------------------------|-------------|
 | **USDA FSIS** | Often **403** (blocked) | Try `REGULATORY_NO_PROXY=1` on the server; if still blocked, consider FSIS API docs or email alerts as a backup *strategy* (not automatic in NECO today). |
-| **White House briefing RSS** | **404** (moved) | Find the current RSS or news feed URL on whitehouse.gov; update NECO config. |
-| **Flexport blog** | **404** | Find current blog feed URL or remove source if there is no public feed. |
-| **Supply Chain Dive** | **403** | Site may block automated access; find an official RSS they allow, or remove/replace with another publication. |
-| **CBP duty rates / legal decisions / UBR** | Often **empty** | Confirm URLs on cbp.gov; may be legitimately quiet — still verify links are current. |
+| **White House RSS** | Was **404** | Config now uses `whitehouse.gov/presidential-actions/feed/` — if it breaks again, find the current feed on whitehouse.gov. |
+| **The Loadstar (tier-6 RSS)** | Replaces Flexport blog | `theloadstar.com/feed/` — if it fails, update `sources_config.json`. |
+| **Supply Chain Dive** | Was **403** on old URL | Config now uses `supplychaindive.com/feeds/news/` — if blocked again, try another network or contact the site. |
+| **CBP duty rates / legal decisions / UBR** | Share **main trade RSS** | Same URL as CSMS in config; items dedupe in DB — not “broken” if counts look shared. |
 | **USITC HTS** | Shows empty in a one-off test | Often **normal** until HTS release changes — verify with technical owner, not a broken feed. |
 
 **Reference docs for them:**  

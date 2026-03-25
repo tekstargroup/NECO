@@ -58,7 +58,12 @@ class Shipment(Base):
     # RESTRICT delete for documents/analyses - audit history should not be cascade deleted
     documents = relationship("ShipmentDocument", back_populates="shipment")  # No cascade - RESTRICT at FK level
     analyses = relationship("Analysis", back_populates="shipment")  # No cascade - RESTRICT at FK level
-    
+    item_document_links = relationship(
+        "ShipmentItemDocument",
+        back_populates="shipment",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self):
         return f"<Shipment {self.name} ({self.status.value})>"
 
@@ -115,7 +120,12 @@ class ShipmentItem(Base):
     
     # Relationships
     shipment = relationship("Shipment", back_populates="items")
-    
+    document_links = relationship(
+        "ShipmentItemDocument",
+        back_populates="item",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self):
         return f"<ShipmentItem {self.label} (HTS: {self.declared_hts})>"
 

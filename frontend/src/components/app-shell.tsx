@@ -10,7 +10,17 @@
 import { UserButton, OrganizationSwitcher } from "@clerk/nextjs"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import { Package } from "lucide-react"
+
+type RuntimeTrust = {
+  environment?: string
+  classification_rule_mode?: string
+  sprint12_inline_analysis_dev?: boolean
+  sprint12_sync_analysis_dev?: boolean
+  sprint12_fast_analysis_dev?: boolean
+  sprint12_instant_analysis_dev?: boolean
+}
 
 export function AppShell({
   children,
@@ -20,6 +30,29 @@ export function AppShell({
   isDevAuth?: boolean
 }) {
   const router = useRouter()
+  const [runtimeTrust, setRuntimeTrust] = useState<RuntimeTrust | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const base = typeof window !== "undefined" ? window.location.origin : ""
+    fetch(`${base}/api/v1/runtime-trust`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setRuntimeTrust(data)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const showTrustBanner =
+    runtimeTrust &&
+    (runtimeTrust.environment !== "production" ||
+      runtimeTrust.sprint12_instant_analysis_dev ||
+      runtimeTrust.sprint12_fast_analysis_dev ||
+      (runtimeTrust.classification_rule_mode &&
+        String(runtimeTrust.classification_rule_mode).toLowerCase() !== "enforce"))
 
   const handleDevLogout = () => {
     document.cookie = "neco_dev_token=; path=/; max-age=0"
@@ -30,6 +63,23 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-background">
+      {showTrustBanner && runtimeTrust && (
+        <div
+          className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-950"
+          role="status"
+        >
+          <strong className="font-semibold">Trust / dev runtime:</strong>{" "}
+          env={runtimeTrust.environment ?? "—"} · rule_mode=
+          {runtimeTrust.classification_rule_mode ?? "—"} · inline=
+          {String(runtimeTrust.sprint12_inline_analysis_dev)} · sync=
+          {String(runtimeTrust.sprint12_sync_analysis_dev)} · fast=
+          {String(runtimeTrust.sprint12_fast_analysis_dev)} · instant=
+          {String(runtimeTrust.sprint12_instant_analysis_dev)}
+          <span className="text-amber-800 ml-2">
+            Analysis path and flags may differ from production; confirm outcomes against source documents.
+          </span>
+        </div>
+      )}
       {/* Top Bar */}
       <header className="border-b">
         <div className="flex h-16 items-center px-6 justify-between">

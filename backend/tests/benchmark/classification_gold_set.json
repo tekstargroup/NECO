@@ -1,0 +1,369 @@
+[
+  {
+    "id": "med-01",
+    "description": "Endoscopic articulated gripper, single-use, used during endoscopic surgical procedures for tissue grasping and traction",
+    "country_of_origin": "KR",
+    "expected_hts_heading": "9018",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "medical_devices"
+  },
+  {
+    "id": "med-02",
+    "description": "Endoscopic surgery training simulator with robotic arm interface, for medical training only, not for patient use",
+    "country_of_origin": "KR",
+    "expected_hts_heading": "9023",
+    "expected_outcome": "supported",
+    "difficulty": "hard",
+    "category": "medical_devices"
+  },
+  {
+    "id": "med-03",
+    "description": "Reusable laparoscopic trocar, stainless steel, 10mm diameter, used for creating access ports during minimally invasive surgery",
+    "country_of_origin": "DE",
+    "expected_hts_heading": "9018",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "medical_devices"
+  },
+  {
+    "id": "med-04",
+    "description": "Disposable biopsy forceps for gastrointestinal endoscopy, sterile packaged",
+    "country_of_origin": "JP",
+    "expected_hts_heading": "9018",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "medical_devices"
+  },
+  {
+    "id": "med-05",
+    "description": "Surgical robot driver unit with integrated controller, for use with articulated instruments during surgery",
+    "country_of_origin": "KR",
+    "expected_hts_heading": "9018",
+    "expected_outcome": "supported",
+    "difficulty": "hard",
+    "category": "medical_devices"
+  },
+  {
+    "id": "med-06",
+    "description": "Anatomical model of human knee joint, plastic, for educational demonstration",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "9023",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "medical_devices"
+  },
+  {
+    "id": "mach-01",
+    "description": "Industrial robotic arm, 6-axis, payload capacity 10kg, for manufacturing assembly",
+    "country_of_origin": "JP",
+    "expected_hts_heading": "8479",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "machinery"
+  },
+  {
+    "id": "mach-02",
+    "description": "CNC milling machine, vertical spindle, table size 1200x500mm, for metalworking",
+    "country_of_origin": "TW",
+    "expected_hts_heading": "8459",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "machinery"
+  },
+  {
+    "id": "mach-03",
+    "description": "Centrifugal pump, cast iron housing, 50HP motor, for industrial water transfer",
+    "country_of_origin": "IN",
+    "expected_hts_heading": "8413",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "machinery"
+  },
+  {
+    "id": "mach-04",
+    "description": "AC servo motor, 750W, brushless, with integrated encoder, for CNC machine tool",
+    "country_of_origin": "JP",
+    "expected_hts_heading": "8501",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "machinery"
+  },
+  {
+    "id": "mach-05",
+    "description": "Hydraulic press brake, 100-ton capacity, CNC-controlled back gauge, for sheet metal bending",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "8462",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "machinery"
+  },
+  {
+    "id": "parts-01",
+    "description": "Replacement gripper jaw insert for EndoCubot surgical robot, titanium alloy",
+    "country_of_origin": "KR",
+    "expected_hts_heading": "9018",
+    "expected_outcome": "supported",
+    "difficulty": "hard",
+    "category": "parts_vs_systems"
+  },
+  {
+    "id": "parts-02",
+    "description": "Spindle bearing for CNC lathe, ceramic ball type, 70mm bore",
+    "country_of_origin": "JP",
+    "expected_hts_heading": "8482",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "parts_vs_systems"
+  },
+  {
+    "id": "parts-03",
+    "description": "Control board PCB assembly for industrial welding robot, with firmware",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "8537",
+    "expected_outcome": "supported",
+    "difficulty": "hard",
+    "category": "parts_vs_systems"
+  },
+  {
+    "id": "parts-04",
+    "description": "Complete endoscopy tower system including light source, camera head, monitor, and insufflator",
+    "country_of_origin": "DE",
+    "expected_hts_heading": "9018",
+    "expected_outcome": "supported",
+    "difficulty": "hard",
+    "category": "parts_vs_systems"
+  },
+  {
+    "id": "train-01",
+    "description": "Virtual reality surgical training system with haptic feedback gloves and head-mounted display",
+    "country_of_origin": "US",
+    "expected_hts_heading": "9023",
+    "expected_outcome": "supported",
+    "difficulty": "hard",
+    "category": "training_equipment"
+  },
+  {
+    "id": "train-02",
+    "description": "CPR training manikin, adult size, with electronic feedback system",
+    "country_of_origin": "NO",
+    "expected_hts_heading": "9023",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "training_equipment"
+  },
+  {
+    "id": "train-03",
+    "description": "Flight simulator motion platform with 6 degrees of freedom, for pilot training",
+    "country_of_origin": "CA",
+    "expected_hts_heading": "8805",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "training_equipment"
+  },
+  {
+    "id": "edge-01",
+    "description": "Widget",
+    "country_of_origin": "CN",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "edge",
+    "category": "edge_cases"
+  },
+  {
+    "id": "edge-02",
+    "description": "",
+    "country_of_origin": null,
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "edge",
+    "category": "edge_cases"
+  },
+  {
+    "id": "edge-03",
+    "description": "Thing made of stuff for use in places",
+    "country_of_origin": "US",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "edge",
+    "category": "edge_cases"
+  },
+  {
+    "id": "edge-04",
+    "description": "Steel tube, round cross section, outer diameter 25mm, wall thickness 2mm, seamless, cold-drawn",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "7304",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "edge_cases"
+  },
+  {
+    "id": "edge-05",
+    "description": "Kit containing 5 disposable scalpels, 10 gauze pads, 1 pair scissors, sterile package, for field first aid",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "9018",
+    "expected_outcome": "supported",
+    "difficulty": "hard",
+    "category": "edge_cases"
+  },
+  {
+    "id": "edge-06",
+    "description": "Software license key card for CAD/CAM design software, physical card only, no media",
+    "country_of_origin": "US",
+    "expected_hts_heading": null,
+    "expected_outcome": "needs_input",
+    "difficulty": "hard",
+    "category": "edge_cases"
+  },
+  {
+    "id": "textile-01",
+    "description": "Men's woven cotton dress shirt, long sleeve, 100% cotton, single collar",
+    "country_of_origin": "BD",
+    "expected_hts_heading": "6205",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "textiles"
+  },
+  {
+    "id": "textile-02",
+    "description": "Women's knitted synthetic fiber running jacket with zipper, 90% polyester 10% elastane",
+    "country_of_origin": "VN",
+    "expected_hts_heading": "6110",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "textiles"
+  },
+  {
+    "id": "chem-01",
+    "description": "Sodium hydroxide solution, 50% concentration, in 200-liter drums, industrial grade",
+    "country_of_origin": "US",
+    "expected_hts_heading": "2815",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "chemicals"
+  },
+  {
+    "id": "elec-01",
+    "description": "Wireless Bluetooth headphones, over-ear, active noise cancelling, rechargeable lithium battery",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "8518",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "electronics"
+  },
+  {
+    "id": "elec-02",
+    "description": "Lithium-ion battery pack, 48V 20Ah, for electric bicycle, with BMS",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "8507",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "electronics"
+  },
+  {
+    "id": "elec-03",
+    "description": "LED panel light, 600x600mm, 40W, 4000K, for commercial ceiling installation",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "9405",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "electronics"
+  },
+  {
+    "id": "food-01",
+    "description": "Frozen boneless skinless chicken breast, individually quick frozen, 2kg bags",
+    "country_of_origin": "BR",
+    "expected_hts_heading": "0207",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "food"
+  },
+  {
+    "id": "auto-01",
+    "description": "Automotive disc brake rotor, cast iron, ventilated, for passenger vehicle front axle",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "8708",
+    "expected_outcome": "supported",
+    "difficulty": "easy",
+    "category": "automotive"
+  },
+  {
+    "id": "auto-02",
+    "description": "Electric vehicle traction motor, permanent magnet synchronous, 150kW, liquid cooled",
+    "country_of_origin": "CN",
+    "expected_hts_heading": "8501",
+    "expected_outcome": "supported",
+    "difficulty": "medium",
+    "category": "automotive"
+  },
+  {
+    "id": "needs-input-01",
+    "description": "Rubber tube",
+    "country_of_origin": "CN",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "medium",
+    "category": "needs_input_cases",
+    "note": "Rule-only CLI: no clarification flow, so this resolves to no_classification. Full pipeline would return needs_input."
+  },
+  {
+    "id": "needs-input-02",
+    "description": "Plastic container",
+    "country_of_origin": "CN",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "medium",
+    "category": "needs_input_cases",
+    "note": "Rule-only CLI: no clarification flow, so this resolves to no_classification. Full pipeline would return needs_input."
+  },
+  {
+    "id": "weak-01",
+    "description": "Metal bracket, zinc-plated, L-shaped, approximately 50mm",
+    "country_of_origin": "CN",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "medium",
+    "category": "weak_support_cases",
+    "note": "Generic metal bracket — rule engine cannot resolve to a confident heading. Expected weak/no support."
+  },
+  {
+    "id": "weak-02",
+    "description": "Electronic component, surface-mount type",
+    "country_of_origin": "CN",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "medium",
+    "category": "weak_support_cases",
+    "note": "Too vague to classify confidently. Could be resistor, capacitor, IC — no single heading is defensible."
+  },
+  {
+    "id": "weak-03",
+    "description": "Plastic part for household appliance, injection molded",
+    "country_of_origin": "CN",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "medium",
+    "category": "weak_support_cases",
+    "note": "Insufficient specificity — classification depends on which appliance and the part's function."
+  },
+  {
+    "id": "insuff-01",
+    "description": "Medical device accessory, compatible with brand X endoscope",
+    "country_of_origin": "KR",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "hard",
+    "category": "insufficient_support_cases",
+    "note": "Accessory type unknown. Could be 9018 or 9033 depending on function. Rule engine should not confidently classify."
+  },
+  {
+    "id": "insuff-02",
+    "description": "Replacement filter",
+    "country_of_origin": "DE",
+    "expected_hts_heading": null,
+    "expected_outcome": "no_classification",
+    "difficulty": "medium",
+    "category": "insufficient_support_cases",
+    "note": "No context on filter type (air/oil/water/medical). Cannot determine heading without more detail."
+  }
+]

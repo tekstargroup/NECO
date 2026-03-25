@@ -21,6 +21,7 @@ from sqlalchemy import select, and_
 from app.models.review_record import ReviewRecord
 from app.services.audit_replay_service import AuditReplayService
 from app.core.hts_constants import AUTHORITATIVE_HTS_VERSION_ID
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,9 @@ class AuditPackService:
         
         # Build audit pack
         pack = {
-            "audit_pack_version": "1.0",
+            "audit_pack_version": "2.0",
             "generated_at": datetime.utcnow().isoformat(),
+            "neco_version": getattr(settings, "APP_VERSION", "unknown"),
             "hts_version_id": AUTHORITATIVE_HTS_VERSION_ID,
             "disclaimer": self._get_disclaimer(),
             "summary": {

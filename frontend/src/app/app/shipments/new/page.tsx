@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApiClient, ApiClientError, formatApiError } from "@/lib/api-client-client"
 import { useDevAuthContext } from "@/contexts/dev-auth-context"
 
+type ShipmentMode = "PRE_COMPLIANCE" | "ENTRY_COMPLIANCE"
+
 export default function NewShipmentPage() {
   const router = useRouter()
   const { apiPost, effectiveOrgId, useDevAuth } = useApiClient()
@@ -32,6 +34,7 @@ export default function NewShipmentPage() {
   const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: "",
+    shipmentType: "PRE_COMPLIANCE" as ShipmentMode,
     references: [] as Array<{ key: string; value: string }>,
     items: [] as Array<{
       label: string
@@ -62,10 +65,13 @@ export default function NewShipmentPage() {
     try {
       const response = await apiPost<{ shipment_id: string }>("/api/v1/shipments", {
         name: formData.name,
-        references: formData.references.map((r) => ({
-          key: r.key,
-          value: r.value,
-        })),
+        references: [
+          { key: "SHIPMENT_TYPE", value: formData.shipmentType },
+          ...formData.references.map((r) => ({
+            key: r.key,
+            value: r.value,
+          })),
+        ],
         items: formData.items.map((item) => ({
           label: item.label,
           declared_hts_code: item.declared_hts_code || null,
@@ -128,6 +134,30 @@ export default function NewShipmentPage() {
                 className="w-full px-3 py-2 border rounded-md"
                 maxLength={255}
               />
+            </div>
+
+            <div>
+              <label htmlFor="shipmentType" className="block text-sm font-medium mb-1">
+                Shipment Type *
+              </label>
+              <select
+                id="shipmentType"
+                required
+                value={formData.shipmentType}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    shipmentType: e.target.value as ShipmentMode,
+                  })
+                }
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="PRE_COMPLIANCE">Pre-Compliance (before filing/shipping)</option>
+                <option value="ENTRY_COMPLIANCE">Entry Compliance (entry-ready review)</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Pre-Compliance is advisory planning mode. Entry Compliance is filing-oriented review mode.
+              </p>
             </div>
 
             {/* References */}

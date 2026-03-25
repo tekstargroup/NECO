@@ -13,10 +13,13 @@ import { Button } from "@/components/ui/button"
 interface RecommendationDetailDrawerProps {
   open: boolean
   onClose: () => void
+  isPreCompliance?: boolean
   item: {
     displayName: string
     declaredHts: string
     recommendedHts: string
+    currentDutyRate?: string
+    countryOfOrigin?: string
     estimatedSavings: number
     shortReason: string
     confidence: number
@@ -44,6 +47,7 @@ interface RecommendationDetailDrawerProps {
 export function RecommendationDetailDrawer({
   open,
   onClose,
+  isPreCompliance = false,
   item,
   rawItem,
   evidenceMap,
@@ -65,10 +69,10 @@ export function RecommendationDetailDrawer({
     : []
   if (whyFits.length === 0) {
     if (item.recommendedHts) whyFits.push({ text: "Product description matches classification scope from invoice." })
-    if (item.estimatedSavings > 0) whyFits.push({ text: "Alternative HTS shows lower duty rate based on comparable data." })
+    if (item.estimatedSavings > 0) whyFits.push({ text: `${isPreCompliance ? "Likely HS code suggestion" : "Alternative HTS"} shows lower duty rate based on comparable data.` })
     if (rawItem?.psc?.alternatives?.length) whyFits.push({ text: "Historical usage and PSC signals align with similar imports." })
     if (rawItem?.classification?.primary_candidate) whyFits.push({ text: "Classification engine identified matching HTS structure." })
-    if (whyFits.length === 0) whyFits.push({ text: "Alternative classification identified from document analysis." })
+    if (whyFits.length === 0) whyFits.push({ text: `${isPreCompliance ? "Likely HS code suggestion" : "Alternative classification"} identified from document analysis.` })
   }
 
   const whyRisky: { text: string; source?: string }[] = evidenceBundle?.conflicting_evidence?.length || evidenceBundle?.warning_evidence?.length
@@ -118,19 +122,39 @@ export function RecommendationDetailDrawer({
             <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
           </div>
 
-          {/* Section 1: Alternative HTS identified */}
+          {/* Section 1: Classification suggestion */}
           <section>
-            <h3 className="text-sm font-medium mb-2" style={{ color: "#64748B" }}>Alternative HTS identified</h3>
+            <h3 className="text-sm font-medium mb-2" style={{ color: "#64748B" }}>{isPreCompliance ? "Likely HS code suggestion" : "Alternative HTS identified"}</h3>
             <div className="rounded-lg border border-[#E5E7EB] p-4 space-y-2">
               <p><strong>{item.displayName}</strong></p>
-              <p>Alternative HTS: <code className="font-mono text-sm bg-gray-100 px-1 rounded">{item.recommendedHts}</code></p>
-              {item.estimatedSavings > 0 && (
+              <p>{isPreCompliance ? "Likely HS code" : "Alternative HTS"}: <code className="font-mono text-sm bg-gray-100 px-1 rounded">{item.recommendedHts}</code></p>
+              <p>Current duty rate (item + COO): <strong>{item.currentDutyRate || "Pending duty resolution"}</strong> ({item.countryOfOrigin || "COO not provided"})</p>
+              {!isPreCompliance && item.estimatedSavings > 0 && (
                 <p className="text-green-700 font-semibold">Estimated savings: ${item.estimatedSavings.toLocaleString()}</p>
               )}
               <p>Evidence strength: <span className={evidenceStrengthLabel === "Strong" ? "text-green-700" : evidenceStrengthLabel === "Moderate" ? "text-amber-700" : ""}>{evidenceStrengthLabel}</span></p>
               <p>Review level: <span className={reviewLevel === "MEDIUM" || reviewLevel === "Medium" ? "text-amber-700" : ""}>{reviewLevel}</span></p>
             </div>
           </section>
+
+          {/* Prior knowledge notice */}
+          {rawItem?.prior_knowledge && (
+            <section>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-1">
+                <h3 className="text-sm font-semibold text-blue-900">Prior classification found</h3>
+                <p className="text-sm text-blue-800">
+                  HTS: <code className="font-mono bg-blue-100 px-1 rounded">{rawItem.prior_knowledge.prior_hts_code}</code>
+                  {rawItem.prior_knowledge.source_review_id && (
+                    <span className="text-xs text-blue-600 ml-2">from review {rawItem.prior_knowledge.source_review_id.slice(0, 8)}...</span>
+                  )}
+                </p>
+                {rawItem.prior_knowledge.accepted_by && (
+                  <p className="text-xs text-blue-700">Accepted by: {rawItem.prior_knowledge.accepted_by} {rawItem.prior_knowledge.accepted_at ? `on ${new Date(rawItem.prior_knowledge.accepted_at).toLocaleDateString()}` : ""}</p>
+                )}
+                <p className="text-xs text-blue-600 mt-1 font-medium">Review before applying — not auto-applied</p>
+              </div>
+            </section>
+          )}
 
           {/* Section 2: Why this may fit */}
           <section>
@@ -184,19 +208,62 @@ export function RecommendationDetailDrawer({
           {/* Section 5: Evidence details */}
           <section>
             <h3 className="text-sm font-medium mb-2" style={{ color: "#64748B" }}>Evidence</h3>
-            <ul className="space-y-1 text-sm" style={{ color: "#0F172A" }}>
-              {docDetails.map((d: { name: string; detail: string }, i: number) => (
-                <li key={i}>• {d.name} ({d.detail})</li>
-              ))}
-            </ul>
+            {rawItem?.evidence_used?.length > 0 ? (
+              <div className="space-y-2">
+                {rawItem.evidence_used.map((ev: any, i: number) => (
+                  <div key={i} className="rounded border border-slate-200 p-2 text-sm">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] font-medium">{ev.document_type?.replace(/_/g, " ") || "Doc"}</span>
+                      <span className="font-medium">{ev.filename}</span>
+                      <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        ev.match_confidence === "high" ? "bg-green-50 text-green-700" :
+                        ev.match_confidence === "medium" ? "bg-slate-100 text-slate-600" :
+                        "bg-amber-50 text-amber-700"
+                      }`}>
+                        {ev.match_confidence === "high" ? "Match: HIGH (linked)" :
+                         ev.match_confidence === "medium" ? "Match: MEDIUM" :
+                         "Match: LOW (filename only)"}
+                      </span>
+                    </div>
+                    {ev.snippet && (
+                      <p className="mt-1 text-xs text-slate-600 leading-relaxed">&quot;{ev.snippet.slice(0, 200)}{ev.snippet.length > 200 ? "…" : ""}&quot;</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="space-y-1 text-sm" style={{ color: "#0F172A" }}>
+                {docDetails.map((d: { name: string; detail: string }, i: number) => (
+                  <li key={i}>• {d.name} ({d.detail})</li>
+                ))}
+              </ul>
+            )}
           </section>
+
+          {/* Section 5b: Authority references */}
+          {evidenceBundle?.authority_refs && evidenceBundle.authority_refs.length > 0 && (
+            <section>
+              <h3 className="text-sm font-medium mb-2" style={{ color: "#64748B" }}>Authority references</h3>
+              <ul className="space-y-1 text-sm" style={{ color: "#0F172A" }}>
+                {evidenceBundle.authority_refs.map((ref, i) => (
+                  <li key={i}>
+                    • <strong>{ref.authority_type}</strong>
+                    {ref.reference_id ? ` ${ref.reference_id}` : ""}
+                    {ref.title ? ` — ${ref.title}` : ""}
+                    {ref.relation ? ` (${ref.relation})` : ""}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* Section 6: NECO reasoning */}
           <section>
             <h3 className="text-sm font-medium mb-2" style={{ color: "#64748B" }}>NECO reasoning</h3>
             <p className="text-sm" style={{ color: "#0F172A" }}>
-              {reasoningSummary ??
-                `NECO compared declared HTS ${item.declaredHts} against alternative codes using document evidence, duty structure, and classification rules.`}
+              {(evidenceBundle as any)?.explanation_summary ||
+                reasoningSummary ||
+                `NECO compared declared HTS ${item.declaredHts} against ${isPreCompliance ? "likely HS code suggestions" : "alternative codes"} using document evidence, duty structure, and classification rules.`}
             </p>
           </section>
 

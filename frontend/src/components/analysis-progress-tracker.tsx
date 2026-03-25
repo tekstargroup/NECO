@@ -1,65 +1,49 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { FileText, ClipboardList, Hash, ShieldCheck, FileCheck, CheckCircle } from "lucide-react"
+import { FileText, ClipboardList, Hash, CheckCircle } from "lucide-react"
 
-const STEP_COUNT = 6
-const STEP_PCT = 100 / STEP_COUNT // ~16.67% per step
+const STEP_COUNT = 4
+const STEP_PCT = 100 / STEP_COUNT
 const TRUST_MICRO_COPY = [
-  "Parsing uploaded files",
-  "Checking HTS structure and duty mapping",
-  "Evaluating regulatory signals",
-  "Cross-checking supporting evidence",
+  "Reading uploaded documents and extracted fields",
+  "Comparing product data with tariff and regulatory references",
+  "Building likely HS code suggestions with supporting evidence",
 ]
 
 /**
- * Step config: label for the segment, statusMessage (action-focused, professional) shown below the bar.
- * Step 5 = Preparing Results (confirming/loading); Step 6 = Completed (results ready).
+ * Step config: label for the segment, statusMessage shown below the bar.
  */
 const STEPS = [
   {
     id: "documents",
     number: 1,
-    label: "Processing Document",
-    statusMessage: "Your documents are being processed and validated.",
+    label: "Analyzing Documents",
+    statusMessage: "Analyzing documents provided.",
   },
   {
-    id: "duty",
+    id: "compare",
     number: 2,
-    label: "Duty & Classification",
-    statusMessage: "Duty rates and product classifications are being applied.",
+    label: "Comparing Data",
+    statusMessage: "Comparing extracted product data against tariff and regulatory references.",
   },
   {
-    id: "import-codes",
+    id: "suggestions",
     number: 3,
-    label: "Analyzing Import Codes",
-    statusMessage: "Import codes and tariff data are being analyzed.",
-  },
-  {
-    id: "compliance",
-    number: 4,
-    label: "Compliance and Risk",
-    statusMessage: "Compliance and risk checks are being completed.",
-  },
-  {
-    id: "preparing-results",
-    number: 5,
-    label: "Preparing Results",
-    statusMessage: "Confirming results and preparing your report.",
+    label: "Forming Suggestions",
+    statusMessage: "Forming likely HS code suggestions with evidence support.",
   },
   {
     id: "completed",
-    number: 6,
+    number: 4,
     label: "Completed",
     statusMessage: "Analysis complete. View your results below.",
   },
 ] as const
 
-/** Step 6 (Completed): show done copy. Step 4 with no time left = "Completing final checks". Step 5 = preparing. Otherwise show time. */
 function formatRemainingMinutes(seconds: number, currentStepIndex: number): string {
-  if (currentStepIndex === 5) return "Results will appear when ready."
-  if (currentStepIndex === 4) return "Almost done…"
-  if (currentStepIndex === 3 && seconds <= 0) return "Completing final checks…"
+  if (currentStepIndex === STEPS.length - 1) return "Results will appear when ready."
+  if (currentStepIndex === STEPS.length - 2) return "Almost done…"
   if (seconds <= 0) return "Completing final checks…"
   const m = Math.ceil(seconds / 60)
   if (m <= 1) return "Less than a minute remaining"
@@ -101,9 +85,9 @@ export function AnalysisProgressTracker({
   const progress = Math.min(100, (elapsed / estimatedTotalSeconds) * 100)
   const remaining = Math.max(0, estimatedTotalSeconds - elapsed)
   const timeBasedStep = Math.min(STEPS.length - 1, Math.floor(progress / STEP_PCT))
-  // Never show "Completed" (step 6) until server actually says COMPLETE
+  // Never show "Completed" until server actually says COMPLETE
   const isStillWaiting = serverStatus === "RUNNING" || serverStatus === "QUEUED"
-  const currentStepIndex = isStillWaiting ? Math.min(timeBasedStep, 4) : timeBasedStep
+  const currentStepIndex = isStillWaiting ? Math.min(timeBasedStep, STEPS.length - 2) : timeBasedStep
   const currentStep = STEPS[currentStepIndex]
   const rotatingMessage = TRUST_MICRO_COPY[Math.floor(elapsed / 3) % TRUST_MICRO_COPY.length]
 
@@ -111,8 +95,6 @@ export function AnalysisProgressTracker({
     <FileText key="doc" className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />,
     <ClipboardList key="duty" className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />,
     <Hash key="codes" className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />,
-    <ShieldCheck key="compliance" className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />,
-    <FileCheck key="preparing" className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />,
     <CheckCircle key="done" className="h-5 w-5 shrink-0 text-green-600" aria-hidden />,
   ]
 
@@ -199,13 +181,13 @@ export function AnalysisProgressTracker({
             <p className="text-sm font-medium text-foreground">
               {currentStep.statusMessage}
             </p>
-            {currentStepIndex < 5 && (
+            {currentStepIndex < STEPS.length - 1 && (
               <p className="mt-0.5 text-xs text-muted-foreground/90">{rotatingMessage}</p>
             )}
             <p className="mt-1 text-xs text-muted-foreground">
               {formatRemainingMinutes(remaining, currentStepIndex)}
             </p>
-            {currentStepIndex === 5 && remaining <= 0 && (
+            {currentStepIndex === STEPS.length - 1 && remaining <= 0 && (
               <p className="mt-0.5 text-xs text-muted-foreground/90">
                 You can also click <strong>Check for results</strong> below—it does not restart analysis.
               </p>

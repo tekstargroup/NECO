@@ -11,7 +11,7 @@ from sqlalchemy import select, and_, desc
 from sqlalchemy.orm import selectinload
 from uuid import UUID
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -37,6 +37,7 @@ class ReviewResponse(BaseModel):
     prior_review_id: Optional[str] = None
     snapshot_json: dict
     regulatory_evaluations: List[dict] = Field(default_factory=list)
+    item_decisions: Optional[dict] = None
     
     class Config:
         from_attributes = True
@@ -65,6 +66,17 @@ class AcceptRejectRequest(BaseModel):
     """Request to accept or reject a review."""
     action: str = Field(..., pattern="^(accept|reject)$")
     notes: Optional[str] = Field(None, max_length=2000)
+
+
+class ItemDecisionEntry(BaseModel):
+    """Per-line review decision (Sprint E)."""
+    status: str = Field(..., pattern="^(pending|accepted|rejected)$")
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class PatchItemDecisionsRequest(BaseModel):
+    """Merge updates into review_records.item_decisions keyed by item_id (UUID string)."""
+    decisions: Dict[str, ItemDecisionEntry]
 
 
 class OverrideResponse(BaseModel):
@@ -149,7 +161,8 @@ async def get_review(
         created_by=str(review.created_by),
         prior_review_id=str(review.override_of_review_id) if review.override_of_review_id else None,
         snapshot_json=review.object_snapshot,
-        regulatory_evaluations=reg_evals_data
+        regulatory_evaluations=reg_evals_data,
+        item_decisions=review.item_decisions if getattr(review, "item_decisions", None) else None,
     )
 
 
@@ -216,14 +229,16 @@ async def accept_or_reject_review(
     current_org: Organization = Depends(get_current_organization)
 ):
     """
-    Accept or reject a review (MVP: same-user flow, any user with access can act).
+    Accept or reject a review via ReviewService.transition_status.
     
-    Transitions REVIEW_REQUIRED -> REVIEWED_ACCEPTED or REVIEWED_REJECTED.
-    Notes required for reject.
+    All accept/reject actions go through one centralized path so that
+    governance rules (self-review check) and side effects (knowledge
+    recording, audit trail) always fire.
     """
     from sqlalchemy import func
-    from datetime import datetime
+    from app.services.review_service import ReviewService
 
+    # Org-scoped access check
     result = await db.execute(
         select(ReviewRecord, Shipment)
         .join(
@@ -243,7 +258,6 @@ async def accept_or_reject_review(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Review not found or access denied"
         )
-    review = row[0]
 
     new_status = (
         ReviewStatus.REVIEWED_ACCEPTED if request.action == "accept"
@@ -255,25 +269,28 @@ async def accept_or_reject_review(
             detail="Notes are required when rejecting"
         )
 
-    # MVP: same-user flow - treat any authenticated user as REVIEWER
-    is_valid, err_msg = review.can_transition_to(new_status, user_role="REVIEWER")
-    if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=err_msg
-        )
-
-    review.status = new_status
-    review.reviewed_at = datetime.utcnow()
-    review.reviewed_by = str(current_user.id)
-    review.review_reason_code = (
+    reason_code = (
         ReviewReasonCode.ACCEPTED_AS_IS if request.action == "accept"
         else ReviewReasonCode.REJECTED_INCORRECT
     )
-    review.review_notes = request.notes
 
-    await db.commit()
-    await db.refresh(review)
+    try:
+        svc = ReviewService(db)
+        review = await svc.transition_status(
+            review_id=review_id,
+            new_status=new_status,
+            reviewed_by=str(current_user.id),
+            user_role="REVIEWER",
+            reason_code=reason_code,
+            notes=request.notes,
+        )
+        await db.commit()
+        await db.refresh(review)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
     return {
         "id": str(review.id),
@@ -281,6 +298,56 @@ async def accept_or_reject_review(
         "reviewed_at": review.reviewed_at.isoformat() if review.reviewed_at else None,
         "reviewed_by": str(review.reviewed_by),
     }
+
+
+@router.patch("/{review_id}/item-decisions")
+async def patch_review_item_decisions(
+    review_id: UUID,
+    request: PatchItemDecisionsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """
+    Update per-item decisions on a review record (auditable JSON merge).
+    Does not replace immutable snapshot_json; records who updated each line.
+    """
+    from sqlalchemy import func
+
+    result = await db.execute(
+        select(ReviewRecord, Shipment)
+        .join(
+            Shipment,
+            func.cast(ReviewRecord.object_snapshot["shipment_id"].astext, PGUUID(as_uuid=True)) == Shipment.id,
+        )
+        .where(
+            and_(
+                ReviewRecord.id == review_id,
+                Shipment.organization_id == current_org.id,
+            )
+        )
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review not found or access denied",
+        )
+    review = row[0]
+    prior = dict(review.item_decisions or {})
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    uid = str(current_user.id)
+    for item_id, entry in request.decisions.items():
+        prior[item_id] = {
+            "status": entry.status,
+            "notes": entry.notes,
+            "updated_at": now_iso,
+            "updated_by": uid,
+        }
+    review.item_decisions = prior
+    await db.commit()
+    await db.refresh(review)
+    return {"item_decisions": review.item_decisions}
 
 
 @router.post("/{review_id}/override", response_model=OverrideResponse)

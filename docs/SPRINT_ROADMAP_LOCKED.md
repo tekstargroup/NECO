@@ -63,6 +63,24 @@ flowchart LR
 
 ---
 
+## Sprint 14.5: Pre-Compliance Item Workspace (Planned)
+
+| Field | Value |
+|-------|-------|
+| **Goal** | Make Pre-Compliance document handling execution-first for multi-item shipments (e.g., 10 invoice lines, partial data sheets) |
+| **Scope** | Item-by-item document workspace in Documents tab: assign/move docs per item, strong COO-first cards, and clearer optional evidence area |
+| **Success definition** | User uploads mixed docs and can quickly map each item to evidence, set COO per item, and run analysis without confusion |
+| **Mark complete when** | (1) Documents tab shows an item list with card-based layout (not one long text block); (2) Each item card has a clearly separated required COO area and secondary optional link area; (3) Users can assign/move uploaded docs to specific items (drag/drop or equivalent move action); (4) Supports partial evidence scenarios (some items have data sheets, others do not) with clear status per item; (5) Manual acceptance with a 10-item invoice scenario |
+| **Estimate** | 2–4 days |
+
+**Notes (from current feedback):**
+- This sprint is specifically for high-density workflows where one shipment has many items.
+- Prioritize task clarity and speed: COO completion first, per-item evidence mapping second, optional URL last.
+- Visual model should use discrete cards/tiles per item with minimal color noise and explicit completion status.
+- COO selector keyboard behavior is required: when typing (e.g., "Korea"), user can use Down Arrow to navigate suggestions and Enter to select.
+
+---
+
 ## Sprint 15: MVP Hardening
 
 | Field | Value |
@@ -147,6 +165,7 @@ flowchart LR
 |--------|-------|------|
 | 13 | **UI — Analysis + Review** | Yes |
 | 14 | **UI — Upload + Export** | Yes |
+| 14.5 | **Pre-Compliance item workspace** | Yes (quality gate for scale) |
 | 15 | MVP hardening | Yes |
 | 16 | User-selectable preferences | No |
 | 17 | Bulk import | No |

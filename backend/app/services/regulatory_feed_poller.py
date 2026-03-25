@@ -3,7 +3,7 @@ Regulatory Feed Poller - Compliance Signal Engine
 
 Fetches RSS/API/scrape per sources config, parses items, dedupes by URL, inserts into raw_signals.
 Supports all tiers: CBP, Federal Register, USITC, USTR, CROSS, OFAC, FDA, USDA, BIS, WTO, EU, White House,
-Congress, CBP Quota, FreightWaves, JOC, SupplyChainDive, Flexport.
+Congress, CBP Quota, FreightWaves, JOC, SupplyChainDive, Loadstar.
 """
 
 import json
@@ -30,6 +30,24 @@ logger = logging.getLogger(__name__)
 USER_AGENT = "NECO-Compliance-Signal-Engine/1.0 (Trade Compliance Monitoring)"
 DEFAULT_TIMEOUT = 30
 REQUEST_HEADERS = {"User-Agent": USER_AGENT}
+# Some .gov hosts return empty bodies or 403 for bot-like User-Agents.
+BROWSER_LIKE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/xml, text/xml, application/rss+xml, text/html, */*",
+}
+# Alias for CROSS XML fetch (Accept tuned for XML only)
+CBP_CROSS_HEADERS = {
+    "User-Agent": BROWSER_LIKE_HEADERS["User-Agent"],
+    "Accept": "application/xml, text/xml, */*",
+}
+
+
+def _http_headers_for_url(url: str) -> dict:
+    """Use browser-like UA for hosts that block NECO's default bot string."""
+    u = (url or "").lower()
+    if "rulings.cbp.gov" in u or "fsis.usda.gov" in u:
+        return dict(BROWSER_LIKE_HEADERS)
+    return dict(REQUEST_HEADERS)
 # Bypass HTTP_PROXY by default (corporate proxies often block gov sites). Set REGULATORY_USE_PROXY=1 to use system proxy.
 USE_PROXY = os.environ.get("REGULATORY_USE_PROXY", "").lower() in ("1", "true", "yes")
 REQUEST_KWARGS = {} if USE_PROXY else {"proxies": {"http": None, "https": None}}
@@ -47,7 +65,7 @@ def _parse_rss_feed(url: str, source_name: str) -> List[Dict[str, Any]]:
     """
     items = []
     try:
-        resp = requests.get(url, headers=REQUEST_HEADERS, timeout=DEFAULT_TIMEOUT, **REQUEST_KWARGS)
+        resp = requests.get(url, headers=_http_headers_for_url(url), timeout=DEFAULT_TIMEOUT, **REQUEST_KWARGS)
         resp.raise_for_status()
         parsed = feedparser.parse(resp.content)
         for entry in parsed.entries:
@@ -225,17 +243,14 @@ def _fetch_cbp_cross(source_name: str, base_url: str) -> List[Dict[str, Any]]:
     urls_to_try = []
     if xml_url:
         urls_to_try.append(xml_url)
-    # 2. Common CBP CROSS export URL patterns
-    urls_to_try.extend([
-        "https://rulings.cbp.gov/api/Export/GetLatestRulings?collection=ALL",
-        "https://rulings.cbp.gov/Export/GetLatestRulings?collection=ALL",
-        "https://rulings.cbp.gov/api/export/latest/all",
-    ])
+    # 2. Default export (same as site "All Latest Rulings" XML; collection= empty = all)
+    urls_to_try.append("https://rulings.cbp.gov/api/stat/recentRulings?format=xml&collection=")
     for url in urls_to_try:
         try:
+            headers = CBP_CROSS_HEADERS if "rulings.cbp.gov" in url else {**REQUEST_HEADERS, "Accept": "application/xml, text/xml, */*"}
             resp = requests.get(
                 url,
-                headers={**REQUEST_HEADERS, "Accept": "application/xml, text/xml, */*"},
+                headers=headers,
                 timeout=DEFAULT_TIMEOUT,
                 **REQUEST_KWARGS,
             )
@@ -366,49 +381,88 @@ def _fetch_wco_news(source_name: str, url: str) -> List[Dict[str, Any]]:
 
 def _fetch_usda_fsis_recall(source_name: str) -> List[Dict[str, Any]]:
     """
-    USDA FSIS Recall API - food safety recalls and import-related updates.
-    API: https://www.fsis.usda.gov/fsis/api/recall/v/1
+    USDA FSIS — try Recall JSON API, then public RSS (news-release / recalls).
+    FSIS often blocks non-browser User-Agents on both.
     """
     items = []
-    url = "https://www.fsis.usda.gov/fsis/api/recall/v/1"
+    api_url = "https://www.fsis.usda.gov/fsis/api/recall/v/1"
+    h = _http_headers_for_url(api_url)
     try:
-        resp = requests.get(
-            url,
-            headers=REQUEST_HEADERS,
-            timeout=DEFAULT_TIMEOUT,
-            **REQUEST_KWARGS,
-        )
+        resp = requests.get(api_url, headers=h, timeout=DEFAULT_TIMEOUT, **REQUEST_KWARGS)
+        ct = (resp.headers.get("Content-Type") or "").lower()
+        if resp.status_code == 200 and "json" in ct and not resp.content.strip().startswith(b"<"):
+            data = resp.json()
+            if isinstance(data, list) and data:
+                for rec in data[:50]:
+                    title = rec.get("field_title") or "FSIS Recall"
+                    summary = rec.get("field_summary") or ""
+                    recall_num = rec.get("field_recall_number") or ""
+                    recall_date = rec.get("field_recall_date") or ""
+                    risk = rec.get("field_risk_level") or ""
+                    content = f"{summary[:2000]}..." if len(summary) > 2000 else summary
+                    if risk:
+                        content = f"[{risk}] {content}"
+                    rec_url = (
+                        f"https://www.fsis.usda.gov/recalls-alerts/recall-{recall_num.lower().replace(' ', '-')}"
+                        if recall_num
+                        else "https://www.fsis.usda.gov/recalls-alerts"
+                    )
+                    published_at = None
+                    if recall_date:
+                        try:
+                            published_at = datetime.strptime(recall_date, "%Y-%m-%d")
+                        except (ValueError, TypeError):
+                            pass
+                    items.append({
+                        "source": source_name,
+                        "title": str(title)[:500],
+                        "content": content[:50000] if content else None,
+                        "url": rec_url[:1000],
+                        "published_at": published_at,
+                    })
+                return items
         if resp.status_code != 200:
-            logger.warning("USDA FSIS Recall API error: %s", resp.status_code)
-            return items
-        data = resp.json()
-        if not isinstance(data, list):
-            return items
-        for rec in data[:50]:
-            title = rec.get("field_title") or "FSIS Recall"
-            summary = rec.get("field_summary") or ""
-            recall_num = rec.get("field_recall_number") or ""
-            recall_date = rec.get("field_recall_date") or ""
-            risk = rec.get("field_risk_level") or ""
-            content = f"{summary[:2000]}..." if len(summary) > 2000 else summary
-            if risk:
-                content = f"[{risk}] {content}"
-            rec_url = f"https://www.fsis.usda.gov/recalls-alerts/recall-{recall_num.lower().replace(' ', '-')}" if recall_num else "https://www.fsis.usda.gov/recalls-alerts"
-            published_at = None
-            if recall_date:
-                try:
-                    published_at = datetime.strptime(recall_date, "%Y-%m-%d")
-                except (ValueError, TypeError):
-                    pass
-            items.append({
-                "source": source_name,
-                "title": str(title)[:500],
-                "content": content[:50000] if content else None,
-                "url": rec_url[:1000],
-                "published_at": published_at,
-            })
+            logger.debug("USDA FSIS Recall API status %s, trying RSS fallback", resp.status_code)
     except Exception as e:
-        logger.warning("Failed to fetch USDA FSIS Recall API: %s", e)
+        logger.debug("USDA FSIS Recall API: %s, trying RSS fallback", e)
+
+    for rss_url in (
+        "https://www.fsis.usda.gov/fsis-content/rss/news-release",
+        "https://www.fsis.usda.gov/fsis-content/rss/recalls",
+    ):
+        try:
+            r = requests.get(rss_url, headers=h, timeout=DEFAULT_TIMEOUT, **REQUEST_KWARGS)
+            if r.status_code != 200:
+                continue
+            parsed = feedparser.parse(r.content)
+            for entry in parsed.entries[:50]:
+                link = entry.get("link") or ""
+                if not link and entry.get("links"):
+                    link = entry.links[0].get("href", "")
+                if not link:
+                    continue
+                title = entry.get("title") or "FSIS News"
+                content = entry.get("summary") or entry.get("description") or ""
+                if hasattr(content, "value"):
+                    content = content.value
+                published_at = None
+                if entry.get("published_parsed"):
+                    try:
+                        from time import mktime
+                        published_at = datetime.fromtimestamp(mktime(entry.published_parsed))
+                    except (ValueError, TypeError):
+                        pass
+                items.append({
+                    "source": source_name,
+                    "title": str(title)[:500],
+                    "content": (content or "")[:50000] if content else None,
+                    "url": str(link)[:1000],
+                    "published_at": published_at,
+                })
+            if items:
+                return items
+        except Exception as e:
+            logger.debug("USDA FSIS RSS %s: %s", rss_url, e)
     return items
 
 

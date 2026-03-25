@@ -37,6 +37,7 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
   const [analysisStatus, setAnalysisStatus] = useState<any>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadWarnings, setLoadWarnings] = useState<string[]>([])
   const [runStartTime, setRunStartTime] = useState<number | null>(null)
   const [checkingResults, setCheckingResults] = useState(false)
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null)
@@ -52,6 +53,26 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
   const [resultsGateOpen, setResultsGateOpen] = useState(true)
   /** Frozen seconds for the post-COMPLETE hold animation (remaining time until min duration). */
   const [holdProgressDuration, setHoldProgressDuration] = useState<number | null>(null)
+  const [domainReadiness, setDomainReadiness] = useState<any>(null)
+  const [derivedReviewState, setDerivedReviewState] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchReadiness = async () => {
+      try {
+        const tw = await apiGet<any>(`/api/v1/shipments/${shipmentId}/trust-workflow`)
+        if (!cancelled) {
+          setDomainReadiness(tw?.domain_readiness || null)
+          setDerivedReviewState(tw?.review?.state || null)
+        }
+      } catch {
+        if (!cancelled) setLoadWarnings(prev => prev.includes("readiness") ? prev : [...prev, "readiness"])
+      }
+    }
+    fetchReadiness()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipmentId, analysisStatus?.status])
 
   const handlePreviewExtraction = async () => {
     setPreviewLoading(true)
@@ -100,7 +121,10 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
         const data = await apiGet<{ items: any[] }>(`/api/v1/psc-radar/alerts?shipment_id=${shipmentId}`)
         if (!cancelled && data?.items) setShipmentAlerts(data.items)
       } catch {
-        if (!cancelled) setShipmentAlerts([])
+        if (!cancelled) {
+          setShipmentAlerts([])
+          setLoadWarnings(prev => prev.includes("alerts") ? prev : [...prev, "alerts"])
+        }
       }
     }
     loadAlerts()
@@ -235,12 +259,11 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
   }, [analysisId, shipmentId])
 
   const handleAnalyze = async (forceNew = false, body?: Record<string, unknown>) => {
+    if (analyzing) return
+    if (analysisStatus?.status === "RUNNING" && !forceNew) return
     const endpoint = `/api/v1/shipments/${shipmentId}/analyze${forceNew ? "?force_new=1" : ""}`
     if (typeof window !== "undefined") {
       console.log("[NECO] Analyze clicked, sending POST to", endpoint)
-      // #region agent log
-      fetch("http://127.0.0.1:7656/ingest/8b4abe22-8704-4763-b35c-e6704775c200",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"aa7c8f"},body:JSON.stringify({sessionId:"aa7c8f",location:"analysis-tab.tsx:handleAnalyze:entry",message:"Analyze clicked",data:{shipmentId:String(shipmentId),endpoint:String(endpoint),forceNew:typeof forceNew==="boolean"?forceNew:null},hypothesisId:"H1,H2,H3",timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
     }
     setAnalyzing(true)
     setError(null)
@@ -256,14 +279,11 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
     analyzeAbortRef.current = controller
     const timeoutId = setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS)
 
-    const stuckFallbackMs = 2 * 60 * 1000
+    const stuckFallbackMs = 5 * 60 * 1000
     const stuckFallbackId = setTimeout(() => {
       setAnalyzing(false)
       if (typeof window !== "undefined") {
-        console.log("[NECO] Analyze request took >2 min; button re-enabled so you can try Re-run (start fresh).")
-        // #region agent log
-        fetch("http://127.0.0.1:7656/ingest/8b4abe22-8704-4763-b35c-e6704775c200",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"aa7c8f"},body:JSON.stringify({sessionId:"aa7c8f",location:"analysis-tab.tsx:handleAnalyze:2minFallback",message:"2-min fallback fired, analyzing=false",data:{},hypothesisId:"H2",timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
+        console.log("[NECO] Analyze request took >5 min; button re-enabled so you can try Re-run (start fresh).")
       }
     }, stuckFallbackMs)
 
@@ -285,9 +305,6 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
         if (response.status === "FAILED" || response.status === "REFUSED") {
           setResultsGateOpen(true)
         }
-        // #region agent log
-        if (typeof window !== "undefined") fetch("http://127.0.0.1:7656/ingest/8b4abe22-8704-4763-b35c-e6704775c200",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"aa7c8f"},body:JSON.stringify({sessionId:"aa7c8f",location:"analysis-tab.tsx:handleAnalyze:syncResponse",message:"Sync response received",data:{status:String(response.status),sync:Boolean(response.sync),hasResultJson:Boolean(response.result_json),itemsCount:Array.isArray((response.result_json as any)?.items)?(response.result_json as any).items.length:0,errorMessage:typeof (response as any).error_message==="string"?(response as any).error_message:null},hypothesisId:"H1,H3",timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       } else {
         setAnalysisStatus({ status: response.status })
       }
@@ -307,9 +324,6 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
       }
       setAnalyzing(false)
       setResultsGateOpen(true)
-      // #region agent log
-      if (typeof window !== "undefined") fetch("http://127.0.0.1:7656/ingest/8b4abe22-8704-4763-b35c-e6704775c200",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"aa7c8f"},body:JSON.stringify({sessionId:"aa7c8f",location:"analysis-tab.tsx:handleAnalyze:catch",message:"Analyze request failed",data:{errorName:String((e as Error)?.name||"unknown"),errorMessage:String((e as Error)?.message||"").slice(0,200)},hypothesisId:"H2,H4",timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
     }
   }
 
@@ -333,10 +347,19 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
     <div className="space-y-6">
       {/* Eligibility Panel */}
       {!eligibility.eligible && (
-        <BlockerBox
-          title="Analysis Not Eligible"
-          blockers={eligibility.missing_requirements || []}
-        />
+        <div className="space-y-3">
+          <BlockerBox
+            title="Analysis cannot run yet"
+            blockers={eligibility.missing_requirements || []}
+          />
+          {onSwitchToDocuments && (eligibility.missing_requirements || []).some((m: string) =>
+            /country of origin|missing coo/i.test(String(m))
+          ) && (
+            <Button size="sm" variant="outline" onClick={onSwitchToDocuments}>
+              Go to Documents to complete COO
+            </Button>
+          )}
+        </div>
       )}
 
       {/* Single Analysis card: status, actions, eligibility, warnings */}
@@ -347,7 +370,7 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
               <div className="flex items-center gap-3">
                 <CardTitle className="text-base">Analysis</CardTitle>
                 <span className="text-xs text-muted-foreground">
-                  Eligible via {eligibility.satisfied_path?.replace(/_/g, " ") || "—"}
+                  Requirement path: {eligibility.satisfied_path?.replace(/_/g, " ") || "—"}
                 </span>
                 {analysisStatus && (
                   <>
@@ -550,6 +573,14 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
         </div>
       )}
 
+      {loadWarnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+          {loadWarnings.includes("readiness") && <span>Could not load readiness data. </span>}
+          {loadWarnings.includes("alerts") && <span>Could not load regulatory alerts. </span>}
+          Some information may be incomplete.
+        </div>
+      )}
+
       {/* Scroll target for "Completed" step click; results render below when ready */}
       <div id="analysis-results" className="scroll-mt-4" aria-hidden />
       {analysisStatus?.status === "COMPLETE" && !analysisStatus?.result_json && (
@@ -617,6 +648,8 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
             onSwitchToReviews={onSwitchToReviews}
             onSwitchToDocuments={onSwitchToDocuments}
             onSwitchToExports={onSwitchToExports}
+            derivedReviewState={derivedReviewState}
+            domainReadiness={domainReadiness}
           />
         </div>
       )}
@@ -747,14 +780,10 @@ function NoLineItemsCard({
 }) {
   const docs = resultJson?.evidence_map?.documents || []
   const docWithTable = docs.find((d: any) => d.table_preview && Array.isArray(d.table_preview) && d.table_preview.length > 0)
-  // #region agent log
-  useEffect(() => {
-    if (typeof window !== "undefined") fetch("http://127.0.0.1:7656/ingest/8b4abe22-8704-4763-b35c-e6704775c200",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"aa7c8f"},body:JSON.stringify({sessionId:"aa7c8f",location:"analysis-tab.tsx:NoLineItemsCard:render",message:"NoLineItemsCard shown",data:{analyzing:Boolean(analyzing),shipmentStatus:String(shipmentStatus||""),docsCount:Number(docs.length),hasDocWithTable:Boolean(docWithTable),reRunDisabled:Boolean(analyzing)},hypothesisId:"H1,H5",timestamp:Date.now()})}).catch(()=>{});
-  }, [analyzing, shipmentStatus, docs.length, docWithTable])
-  // #endregion
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
   const [submitting, setSubmitting] = useState(false)
   const [selectionSuccess, setSelectionSuccess] = useState<string | null>(null)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
   const [descriptionColumn, setDescriptionColumn] = useState<string>("")
   const [htsCodeColumn, setHtsCodeColumn] = useState<string>("")
   const [quantityColumn, setQuantityColumn] = useState<string>("")
@@ -846,6 +875,7 @@ function NoLineItemsCard({
     if (selectedRows.size === 0) return
     setSubmitting(true)
     setSelectionSuccess(null)
+    setSelectionError(null)
     try {
       const items = Array.from(selectedRows)
         .sort((a, b) => a - b)
@@ -863,7 +893,7 @@ function NoLineItemsCard({
       onSelectionDone()
     } catch (e: unknown) {
       setSelectionSuccess(null)
-      // Error surfaced by api client / parent
+      setSelectionError(formatApiError(e as ApiClientError) || "Failed to save selected rows")
     } finally {
       setSubmitting(false)
     }
@@ -929,6 +959,9 @@ function NoLineItemsCard({
                   </div>
                 ) : (
                   <>
+                    {selectionError && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{selectionError}</div>
+                    )}
                     <div className="flex flex-wrap gap-3 items-center text-sm">
                       <label className="flex items-center gap-1.5">
                         <span className="text-muted-foreground text-xs">Item name:</span>
@@ -1098,23 +1131,14 @@ function _parseValue(val: any): number {
   return Number.isNaN(n) ? 0 : n
 }
 
-/** Reframe backend reasons: avoid "Could not resolve" (sounds like failure); use insight language. No truncation. */
-function _reframeReason(raw: string | undefined, altHts: string | undefined): string {
+/** Surface backend reason with neutral language. Never overstate certainty. */
+function _reframeReason(raw: string | undefined, altHts: string | undefined, _isPreCompliance = false): string {
   const s = (raw || "").trim()
-  if (
-    altHts &&
-    /no alternative|no plausible classifications|no good match|no confident match/i.test(s)
-  ) {
-    return "Alternative HTS identified from available document evidence. Review before export."
-  }
-  if (/could not resolve|couldn't resolve|unable to resolve|failed to resolve/i.test(s)) {
-    return altHts
-      ? "Declared HTS lacks complete duty resolution. Alternative classification shows defined duty structure and potential savings."
-      : "Declared HTS lacks complete duty resolution. Review recommended."
-  }
   if (s && s.length <= 120) return s
   if (s) return s.slice(0, 117) + "…"
-  return altHts ? "Alternative HTS identified for review." : "Review recommended."
+  return altHts
+    ? "Alternative HTS suggested — review before accepting."
+    : "Review recommended."
 }
 
 function AnalysisResultsView({
@@ -1133,6 +1157,8 @@ function AnalysisResultsView({
   onSwitchToReviews,
   onSwitchToDocuments,
   onSwitchToExports,
+  derivedReviewState,
+  domainReadiness,
 }: {
   resultJson: any
   shipmentId?: string
@@ -1149,11 +1175,16 @@ function AnalysisResultsView({
   onSwitchToReviews?: () => void
   onSwitchToDocuments?: () => void
   onSwitchToExports?: () => void
+  derivedReviewState?: string | null
+  domainReadiness?: any
 }) {
+  const shipmentTypeRef = (shipment?.references || []).find((r: any) => String(r?.key || "").toUpperCase() === "SHIPMENT_TYPE")
+  const shipmentType = String(shipmentTypeRef?.value || "PRE_COMPLIANCE").toUpperCase()
+  const isPreCompliance = shipmentType !== "ENTRY_COMPLIANCE"
   const warnings = resultJson?.warnings || []
   const blockers = resultJson?.blockers || []
   const items = resultJson?.items || []
-  const reviewStatus = resultJson?.review_status || "DRAFT"
+  const reviewStatus = derivedReviewState || resultJson?.review_status || "DRAFT"
   const hasClarificationQuestions = items.some((i: any) => (i.classification?.questions || i.clarification_questions || []).length > 0)
   const [supplementalUrl, setSupplementalUrl] = useState<Record<string, string>>({})
   const [supplementalSubmitting, setSupplementalSubmitting] = useState<Record<string, boolean>>({})
@@ -1176,7 +1207,7 @@ function AnalysisResultsView({
     let cancelled = false
     apiGet(`/api/v1/shipments/${shipmentId}/analysis/items/${itemId}/evidence`)
       .then((bundle: any) => { if (!cancelled) setEvidenceBundle(bundle) })
-      .catch(() => { if (!cancelled) setEvidenceBundle(null) })
+      .catch(() => { if (!cancelled) { setEvidenceBundle(null); console.warn("[NECO] Could not load evidence bundle for item", itemId) } })
     return () => { cancelled = true }
   }, [drawerItem, shipmentId, items, apiGet])
 
@@ -1199,13 +1230,20 @@ function AnalysisResultsView({
     const declaredRate = duty?.resolved_general_raw ? parseFloat(String(duty.resolved_general_raw).replace("%", "")) / 100 : null
     const bestAlt = pscAlts[0] || primary || candidates[0]
     const altRate = bestAlt?.alternative_duty_rate || bestAlt?.duty_rate_general
-    const altHts = bestAlt?.alternative_hts_code || bestAlt?.hts_code
+    const altHts =
+      bestAlt?.alternative_hts_code ||
+      bestAlt?.hts_code ||
+      item?.classification?.likely_hts ||
+      item?.classification?.suggested_hts ||
+      item?.likely_hts ||
+      item?.suggested_hts ||
+      null
     const altRateNum = altRate ? parseFloat(String(altRate).replace("%", "")) / 100 : null
     const altEst = customsValue > 0 && altRateNum != null ? altRateNum * customsValue : (pscAlts[0]?.delta_amount ?? null)
     const deltaAmount = pscAlts[0]?.delta_amount ?? (altRateNum != null && declaredRate != null && customsValue > 0 ? (declaredRate - altRateNum) * customsValue : null)
     const deltaPct = pscAlts[0]?.delta_percent ?? (declaredRate != null && altRateNum != null && declaredRate > 0 ? ((declaredRate - altRateNum) / declaredRate) * 100 : null)
     const status = item.classification?.status || "TRADE_ACTION"
-    const confidence = item.classification?.metadata?.analysis_confidence ?? (status === "SUCCESS" ? 0.85 : status === "NO_CONFIDENT_MATCH" ? 0.5 : 0.6)
+    const confidence = item.classification?.metadata?.analysis_confidence ?? null
     const baseName = item.label || `Item ${idx + 1}`
     const dupCount = productNameCounts.get(baseName) ?? 0
     const displayName = dupCount > 1 ? `${baseName} · Line ${idx + 1}` : baseName
@@ -1215,24 +1253,48 @@ function AnalysisResultsView({
       productName: baseName,
       displayName,
       declaredHts: item.hts_code || "—",
+      hasDeclaredHts: Boolean(item.hts_code),
+      countryOfOrigin: item.country_of_origin || "—",
+      currentDutyRate: duty?.resolved_general_raw || duty?.resolved_special_raw || "Pending duty resolution",
+      dutyScenarios: item.duty_scenarios,
+      classificationMemo: item.classification_memo,
       recommendedHts: altHts,
       estimatedSavings: deltaAmount != null && deltaAmount > 0 ? deltaAmount : (altEst != null ? altEst : 0),
       estimatedSavingsPct: deltaPct,
       confidence,
       risk: blockers.length > 0 ? "Medium" : "Low",
-      shortReason: _reframeReason(item.psc?.summary, altHts),
+      shortReason: _reframeReason(item.psc?.summary, altHts, isPreCompliance),
       evidenceSources: ["Entry Summary", "Commercial Invoice"],
-      likelyHts: altHts || item.hts_code || null,
+      likelyHts:
+        altHts ||
+        item?.classification?.primary_candidate?.hts_code ||
+        item?.classification?.candidates?.[0]?.hts_code ||
+        item.hts_code ||
+        null,
       hasAuthorityRef: Boolean(item?.classification?.candidates?.some((c: any) => c?.legal_basis || c?.source || c?.ruling)),
       hasSignalRef: Boolean(item?.psc?.alternatives?.length || item?.regulatory?.length),
+      priorKnowledge: item.prior_knowledge || null,
     }
   })
 
+  const ALWAYS_VISIBLE_LEVELS = ["no_classification", "needs_input", "insufficient_support"]
+  const visibleRows = isPreCompliance
+    ? viewItems
+    : viewItems.filter((i: any) =>
+        i.recommendedHts ||
+        i.estimatedSavings > 0 ||
+        ALWAYS_VISIBLE_LEVELS.includes(i.classificationMemo?.support_level)
+      )
+  const attentionItems = viewItems.filter((i: any) =>
+    ALWAYS_VISIBLE_LEVELS.includes(i.classificationMemo?.support_level)
+  )
   const totalPotentialSavings = viewItems.reduce((sum: number, i: any) => sum + (i.estimatedSavings || 0), 0)
   const itemsWithRecommendations = viewItems.filter((i: any) => i.recommendedHts).length
   const actionableReviewCount = viewItems.filter((i: any) => i.recommendedHts || (i.estimatedSavings || 0) > 0).length
+  const hasAnyDeclaredHts = viewItems.some((i: any) => i.hasDeclaredHts)
   const reviewRequiredCount = blockers.length > 0 ? items.length : (reviewStatus === "REVIEW_REQUIRED" ? items.length : itemsWithRecommendations || 0)
-  const overallConfidence = viewItems.length ? viewItems.reduce((s: number, i: any) => s + (i.confidence || 0), 0) / viewItems.length : 0.5
+  const confidenceValues = viewItems.map((i: any) => i.confidence).filter((c: any) => c != null && typeof c === "number")
+  const overallConfidence = confidenceValues.length > 0 ? confidenceValues.reduce((s: number, c: number) => s + c, 0) / confidenceValues.length : null
   const overallRisk = blockers.length > 0 ? "Medium" : "Low"
   const recommendedAction = reviewRequiredCount > 0 ? `Review ${reviewRequiredCount} HTS change${reviewRequiredCount !== 1 ? "s" : ""}` : "Ready to export"
 
@@ -1259,6 +1321,31 @@ function AnalysisResultsView({
   return (
     <>
     <div className="space-y-6" id="analysis-results">
+      {/* Readiness strip — backend-derived, per-domain */}
+      {domainReadiness && (
+        <div className="flex flex-wrap gap-3 text-xs">
+          {[
+            { key: "documents", icon: "Docs", ready: domainReadiness.documents?.ready },
+            { key: "items", icon: "Items", ready: domainReadiness.items?.all_ready },
+            { key: "classification", icon: "Classification", ready: domainReadiness.classification?.state === "generated" },
+            { key: "duty", icon: "Duty", ready: domainReadiness.duty?.available },
+            { key: "regulatory", icon: "Regulatory", ready: domainReadiness.regulatory?.signals_available },
+          ].map((d) => (
+            <div
+              key={d.key}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1 border ${
+                d.ready
+                  ? "border-green-200 bg-green-50 text-green-800"
+                  : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+            >
+              <span className="font-medium">{d.icon}</span>
+              <span>{domainReadiness[d.key]?.label || "—"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 1. Sticky header */}
       <div className="sticky top-0 z-30 bg-background/95 backdrop-blur border-b px-6 py-4 -mx-6 -mt-2 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -1287,10 +1374,128 @@ function AnalysisResultsView({
         </div>
       </div>
 
+      {/* Needs Attention — above everything when blocked items exist */}
+      {attentionItems.length > 0 && (
+        <div className="rounded-xl border-2 border-amber-300 bg-amber-50/60 shadow-sm p-5 mt-4 space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-amber-900">Needs Attention ({attentionItems.length})</h2>
+            <p className="text-xs text-amber-800 mt-0.5">These items require input or cannot be reliably classified.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {attentionItems.map((ai: any) => {
+              const level = ai.classificationMemo?.support_level
+              const itemId = ai.id || items[ai.index]?.id
+              const answers = clarificationAnswers[itemId] || {}
+              const openQs = ai.classificationMemo?.open_questions || []
+              const allAnswered = openQs.length > 0 && openQs.every((q: any) => {
+                const attr = typeof q === "string" ? q : q?.attribute
+                return attr && answers[attr]?.trim()
+              })
+              return (
+                <div
+                  key={ai.index}
+                  className={`rounded-lg border p-3 text-sm ${
+                    level === "no_classification" ? "border-red-200 bg-red-50/60" :
+                    level === "needs_input" ? "border-amber-200 bg-amber-50/60" :
+                    "border-slate-200 bg-slate-50/60"
+                  }`}
+                >
+                  <p className="font-medium text-slate-900 truncate">{ai.displayName}</p>
+                  {ai.declaredHts && ai.declaredHts !== "—" && (
+                    <p className="text-xs text-slate-500 font-mono">{ai.declaredHts}</p>
+                  )}
+                  <p className={`text-xs mt-1 ${level === "no_classification" ? "text-red-700" : "text-amber-800"}`}>
+                    {ai.classificationMemo?.summary || (
+                      level === "no_classification"
+                        ? "Cannot generate a reliable classification from current evidence."
+                        : level === "needs_input"
+                        ? "Additional product facts required before classification."
+                        : "Classification has insufficient support — verify independently."
+                    )}
+                  </p>
+                  {level === "needs_input" && openQs.length > 0 && (
+                    <div className="mt-2 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                      {openQs.slice(0, 3).map((q: any, qi: number) => {
+                        const attr = typeof q === "string" ? q : q?.attribute
+                        const question = typeof q === "string" ? q : q?.question || q?.attribute || "—"
+                        return (
+                          <div key={qi}>
+                            <label className="block text-[10px] font-medium text-slate-600">{question}</label>
+                            <input
+                              type="text"
+                              className="w-full rounded border border-slate-300 px-2 py-0.5 text-xs"
+                              placeholder="Your answer…"
+                              value={answers[attr] || ""}
+                              onChange={(e) => setClarificationAnswers((prev) => ({
+                                ...prev,
+                                [itemId]: { ...(prev[itemId] || {}), [attr]: e.target.value },
+                              }))}
+                            />
+                          </div>
+                        )
+                      })}
+                      {onReRunWithClarifications && (
+                        <Button
+                          size="sm" variant="default" className="mt-1 text-xs"
+                          disabled={!allAnswered || analyzing}
+                          onClick={() => onReRunWithClarifications(clarificationAnswers)}
+                        >
+                          {analyzing ? "Re-running…" : "Answer & re-run"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {level === "no_classification" && onSwitchToDocuments && (
+                    <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => onSwitchToDocuments()}>
+                      Upload / map documents
+                    </Button>
+                  )}
+                  {level === "insufficient_support" && (
+                    <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => setDrawerItem(ai)}>
+                      Review evidence
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Import summary (when available) */}
+      {resultJson?.import_summary && (resultJson.import_summary.imported > 0 || resultJson.import_summary.merged > 0 || resultJson.import_summary.conflicts?.length > 0) && (
+        <div className="rounded-md border border-blue-200 bg-blue-50/60 px-4 py-2.5 text-xs text-blue-900">
+          <strong>Import results:</strong>{" "}
+          {resultJson.import_summary.imported > 0 && <span>{resultJson.import_summary.imported} added</span>}
+          {resultJson.import_summary.merged > 0 && <span>{resultJson.import_summary.imported > 0 ? ", " : ""}{resultJson.import_summary.merged} merged</span>}
+          {resultJson.import_summary.skipped > 0 && <span>, {resultJson.import_summary.skipped} unchanged</span>}
+          {resultJson.import_summary.conflicts?.length > 0 && (
+            <span className="text-amber-700 font-medium">, {resultJson.import_summary.conflicts.length} conflict{resultJson.import_summary.conflicts.length !== 1 ? "s" : ""}</span>
+          )}
+          {resultJson.import_summary.conflicts?.length > 0 && (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-amber-700">View conflicts</summary>
+              <ul className="mt-1 space-y-0.5 text-[11px]">
+                {resultJson.import_summary.conflicts.map((c: any, ci: number) => (
+                  <li key={ci}>
+                    <span className="font-mono">{c.existing_hts}</span> (existing: {c.existing_label}) vs{" "}
+                    <span className="font-mono">{c.incoming_hts}</span> (incoming: {c.incoming_label}) — {c.reason}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+
       {/* 2. Narrative header — single clear sentence, then Confidence + Risk */}
       <div className="rounded-xl border-2 border-primary/20 bg-card shadow-sm p-5 mt-6">
         <h2 className="text-xl font-semibold">
-          {totalPotentialSavings > 0
+          {isPreCompliance
+            ? itemsWithRecommendations > 0
+              ? `${itemsWithRecommendations} item${itemsWithRecommendations !== 1 ? "s" : ""} with likely HS classifications identified`
+              : "Pre-compliance classification analysis generated"
+            : totalPotentialSavings > 0
             ? `You may have overpaid $${totalPotentialSavings.toLocaleString()} across ${itemsWithRecommendations} item${itemsWithRecommendations !== 1 ? "s" : ""}`
             : itemsWithRecommendations > 0
             ? `${itemsWithRecommendations} item${itemsWithRecommendations !== 1 ? "s" : ""} with alternative classifications identified`
@@ -1298,68 +1503,47 @@ function AnalysisResultsView({
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           {itemsWithRecommendations > 0
-            ? `Alternative HTS identified with ${overallConfidence >= 0.7 ? "strong" : overallConfidence >= 0.5 ? "moderate" : "weak"} evidence. Review before export.`
-            : "Declared HTS appears consistent with available data."}
+            ? isPreCompliance
+              ? `Suggested HS codes are shown below${overallConfidence != null ? ` with ${overallConfidence >= 0.7 ? "higher" : overallConfidence >= 0.5 ? "moderate" : "lower"} model-reported evidence strength` : ""}. Not a legal determination.`
+              : `Alternative HTS suggestions are shown below. Review before export.`
+            : hasAnyDeclaredHts
+            ? "No alternative identified from available evidence."
+            : "No declared HTS provided. Showing classification suggestions from available evidence."}
         </p>
         <div className="flex flex-wrap gap-4 mt-4">
-          <span><strong>Confidence:</strong> {overallConfidence >= 0.7 ? "High" : overallConfidence >= 0.5 ? "Moderate" : "Low"}</span>
+          <span>
+            <strong>Evidence strength (model):</strong>{" "}
+            {overallConfidence == null ? "Unknown" : overallConfidence >= 0.7 ? "Higher" : overallConfidence >= 0.5 ? "Moderate" : "Lower"}
+          </span>
           <span><strong>Risk:</strong> {overallRisk}</span>
         </div>
       </div>
 
       {showVerifiedBanner && (
         <div className="rounded-lg border border-green-200 bg-green-50/80 px-4 py-3">
-          <p className="text-sm font-semibold text-green-900">Classification verified</p>
+          <p className="text-sm font-semibold text-green-900">No issues detected</p>
           <p className="text-sm text-green-800 mt-1">
-            NECO did not identify alternative classifications with material duty difference or regulatory flags for this shipment.
+            {isPreCompliance
+              ? "NECO did not identify reclassification concerns or regulatory flags for this shipment."
+              : "NECO did not identify alternative classifications with material duty difference or regulatory flags."}
           </p>
           <ul className="text-sm text-green-800 mt-2 list-disc list-inside">
-            <li>Declared HTS appears consistent with the uploaded documents.</li>
-            <li>No material duty difference was identified from the available evidence.</li>
-            <li>No immediate review action is required at this time.</li>
+            <li>{hasAnyDeclaredHts ? "No alternative identified for the declared HTS." : "No declared HTS was provided for comparison."}</li>
+            <li>{isPreCompliance ? "Classification suggestions are based on currently available evidence." : "No material duty difference was identified from the available evidence."}</li>
+            <li>Review is still recommended before filing.</li>
           </ul>
         </div>
       )}
 
-      {/* Regulatory flags — surface near top when present */}
-      {regulatoryFlags.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3">
-          <p className="text-sm font-medium text-amber-900">Regulatory flags detected → increases review requirement</p>
-          <ul className="text-sm text-amber-800 mt-1 list-disc list-inside">
-            {regulatoryFlags.slice(0, 5).map((f, i) => (
-              <li key={i}>{f}</li>
-            ))}
-          </ul>
-          <div className="flex flex-wrap gap-2 mt-3">
-            {onSwitchToDocuments && (
-              <Button size="sm" variant="outline" onClick={onSwitchToDocuments}>
-                Request data sheet in Documents
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const note = `Broker note: Regulatory flags present for shipment ${shipmentId}. Please verify requirements before filing. Flags: ${regulatoryFlags.slice(0, 5).join("; ")}`
-                if (typeof navigator !== "undefined" && navigator.clipboard) {
-                  void navigator.clipboard.writeText(note)
-                }
-              }}
-            >
-              Copy note for broker
-            </Button>
-            {canOpenReviews && (
-              <Button size="sm" onClick={handleOpenReviews}>Mark for broker review</Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 3. PSC Radar table (core decision surface) */}
+      {/* ═══════════════════════════════════════════════════════════════════
+          DOMAIN 1: CLASSIFICATION (always shown)
+          ═══════════════════════════════════════════════════════════════════ */}
       <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b bg-muted/30">
-          <h3 className="font-semibold">PSC Radar — Classification Alternatives</h3>
-          <p className="text-[11px] text-muted-foreground/80 mt-0.5">No filing recommendation is made. Informational only.</p>
+          <h3 className="font-semibold">{isPreCompliance ? "Classification Suggestions" : "Classification Analysis"}</h3>
+          <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+            Classification suggestions are not legal determinations. Confirm with your broker before filing.
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1367,78 +1551,150 @@ function AnalysisResultsView({
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Item</th>
                 <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Declared HTS</th>
-                <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Alternative HTS identified</th>
-                <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Est. Savings</th>
+                <th className="px-4 py-3 text-left font-medium text-[#0F172A]">{isPreCompliance ? "Likely HS suggestion" : "Suggested HTS"}</th>
                 <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Evidence strength</th>
-                <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Review level</th>
-                <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Reason</th>
+                <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Evidence / Reason</th>
                 <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {[...viewItems]
-                .filter((i: any) => i.recommendedHts || i.estimatedSavings > 0)
-                .sort((a: any, b: any) => (b.estimatedSavings || 0) - (a.estimatedSavings || 0))
-                .length > 0 ? (
-                [...viewItems]
-                  .filter((i: any) => i.recommendedHts || i.estimatedSavings > 0)
+              {visibleRows.length > 0 ? (
+                [...visibleRows]
                   .sort((a: any, b: any) => (b.estimatedSavings || 0) - (a.estimatedSavings || 0))
                   .map((vi: any, rowIdx: number) => (
                     <tr
                       key={vi.index}
-                      className={`border-t border-[#E5E7EB] hover:bg-[#F8FAFC] cursor-pointer ${rowIdx % 2 === 1 ? "bg-[#F8FAFC]/50" : ""}`}
+                      className={`border-t border-[#E5E7EB] hover:bg-[#F8FAFC] cursor-pointer ${rowIdx % 2 === 1 ? "bg-[#F8FAFC]/50" : ""} ${ALWAYS_VISIBLE_LEVELS.includes(vi.classificationMemo?.support_level) ? "opacity-50" : ""}`}
                       onClick={() => setDrawerItem(vi)}
                     >
-                      <td className="px-4 py-4 text-left font-medium text-[#0F172A]">{vi.displayName}</td>
-                      <td className="px-4 py-4 text-left font-mono text-xs text-[#0F172A]">{vi.declaredHts}</td>
-                      <td className="px-4 py-4 text-left font-mono text-xs font-bold text-[#0F172A]">{vi.recommendedHts || "—"}</td>
-                      <td className="px-4 py-4 text-left font-bold text-green-700">{vi.estimatedSavings > 0 ? `$${vi.estimatedSavings.toLocaleString()}` : "—"}</td>
-                      <td className="px-4 py-4 text-left">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${vi.confidence >= 0.7 ? "bg-green-100 text-green-800" : vi.confidence >= 0.5 ? "bg-amber-100 text-amber-800" : "bg-gray-100 text-gray-700"}`}>
-                          {vi.confidence >= 0.7 ? "High" : vi.confidence >= 0.5 ? "Moderate" : "Low"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-left">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${vi.risk === "Medium" ? "bg-amber-100 text-amber-800" : "bg-gray-100 text-gray-700"}`}>
-                          {vi.risk}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-left text-[#64748B] text-sm max-w-[320px]">
-                        <p>{vi.shortReason}</p>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          <span className="inline-flex rounded-full bg-blue-50 text-blue-700 px-2 py-0.5 text-[10px]">Doc evidence</span>
-                          {vi.hasAuthorityRef && (
-                            <span className="inline-flex rounded-full bg-purple-50 text-purple-700 px-2 py-0.5 text-[10px]">Authority</span>
-                          )}
-                          {vi.hasSignalRef && (
-                            <span className="inline-flex rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[10px]">Signal</span>
-                          )}
-                        </div>
-                        {!vi.declaredHts || vi.declaredHts === "—" ? (
-                          <p className="mt-1 text-xs text-[#334155]">
-                            Most likely HS code: <strong>{vi.likelyHts || "Pending more evidence"}</strong>
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-4 text-left" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex flex-wrap gap-1">
-                          {onSwitchToReviews && (
+                      {(() => {
+                        const memoLevel = vi.classificationMemo?.support_level
+                        const isNoClassification = memoLevel === "no_classification"
+                        const isInsufficient = memoLevel === "insufficient_support"
+                        const isNeedsInput = memoLevel === "needs_input"
+                        const isSuppressed = isNoClassification || isNeedsInput
+                        const dutyUnavailable = vi.dutyScenarios?.unavailable || (!vi.duty && isSuppressed)
+
+                        if (isSuppressed) {
+                          return (
                             <>
-                              <Button size="sm" variant="default" onClick={handleOpenReviews}>Accept</Button>
-                              <Button size="sm" variant="outline" onClick={handleOpenReviews}>Override</Button>
-                              <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setDrawerItem(vi); }}>
-                                Explain
-                              </Button>
+                              <td className="px-4 py-4 text-left font-medium text-[#0F172A]">{vi.displayName}</td>
+                              <td className="px-4 py-4 text-left font-mono text-xs text-[#0F172A]">{vi.declaredHts}</td>
+                              <td colSpan={4} className="px-4 py-4">
+                                <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-2">
+                                  <p className="text-sm font-medium text-slate-800">
+                                    {isNoClassification
+                                      ? "Cannot generate a reliable classification"
+                                      : "Additional product facts required"}
+                                  </p>
+                                  <p className="text-xs text-slate-600 mt-0.5">
+                                    {vi.classificationMemo?.summary || "Insufficient product evidence for classification."}
+                                  </p>
+                                </div>
+                              </td>
                             </>
-                          )}
-                        </div>
-                      </td>
+                          )
+                        }
+
+                        return (
+                          <>
+                            <td className="px-4 py-4 text-left">
+                              <span className="font-medium text-[#0F172A]">{vi.displayName}</span>
+                              {vi.priorKnowledge && (
+                                <div className="mt-1 rounded bg-blue-50 border border-blue-200 px-2 py-1 text-[10px] text-blue-800">
+                                  <span className="font-semibold">Prior classification found:</span>{" "}
+                                  {vi.priorKnowledge.prior_hts_code}
+                                  {vi.priorKnowledge.accepted_by && <span> (accepted by {vi.priorKnowledge.accepted_by})</span>}
+                                  <span className="block text-blue-600 mt-0.5">Review before applying — not auto-applied</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-4 text-left font-mono text-xs text-[#0F172A]">{vi.declaredHts}</td>
+                            <td className={`px-4 py-4 text-left font-mono text-xs font-bold ${isInsufficient ? "text-slate-400 line-through" : "text-[#0F172A]"}`}>
+                              {vi.recommendedHts || "—"}
+                              {isInsufficient && vi.recommendedHts && (
+                                <span className="block text-[10px] text-slate-500 font-normal no-underline mt-0.5">Unreliable — verify independently</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-4 text-left">
+                              <span
+                                className={`inline-flex px-2 py-0.5 rounded text-xs ${
+                                  isInsufficient || memoLevel === "weak_support"
+                                    ? "bg-gray-100 text-gray-800"
+                                    : vi.confidence >= 0.7
+                                      ? "bg-green-100 text-green-800"
+                                      : vi.confidence >= 0.5
+                                        ? "bg-amber-100 text-amber-800"
+                                        : "bg-gray-100 text-gray-700"
+                                }`}
+                              >
+                                {vi.classificationMemo?.support_label ||
+                                  (vi.confidence == null ? "Unknown" : vi.confidence >= 0.7 ? "High (model)" : vi.confidence >= 0.5 ? "Moderate (model)" : "Low (model)")}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-left text-[#64748B] text-sm max-w-[320px]">
+                              <p>{vi.shortReason}</p>
+                              {vi.evidence_used?.length > 0 && (
+                                <div className="mt-1 space-y-1">
+                                  {vi.evidence_used.slice(0, 2).map((ev: any, evi: number) => (
+                                    <div key={evi} className="text-[10px] text-slate-600 leading-snug">
+                                      <span className="inline-flex rounded bg-blue-50 text-blue-700 px-1 py-0.5 mr-1">{ev.document_type?.replace(/_/g, " ") || "Doc"}</span>
+                                      <span className={`inline-flex rounded px-1 py-0.5 mr-1 ${
+                                        ev.match_confidence === "high" ? "bg-green-50 text-green-700" :
+                                        ev.match_confidence === "medium" ? "bg-slate-100 text-slate-600" :
+                                        "bg-amber-50 text-amber-700"
+                                      }`}>
+                                        {ev.match_confidence === "high" ? "Match: HIGH" :
+                                         ev.match_confidence === "medium" ? "Match: MED" :
+                                         "Match: LOW (filename)"}
+                                      </span>
+                                      {ev.filename}{ev.snippet ? `: "${ev.snippet.slice(0, 80)}…"` : ""}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {!(vi.evidence_used?.length > 0) && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  <span className="inline-flex rounded-full bg-blue-50 text-blue-700 px-2 py-0.5 text-[10px]">Doc evidence</span>
+                                  {vi.hasAuthorityRef && (
+                                    <span className="inline-flex rounded-full bg-purple-50 text-purple-700 px-2 py-0.5 text-[10px]">Authority</span>
+                                  )}
+                                </div>
+                              )}
+                              {!vi.declaredHts || vi.declaredHts === "—" ? (
+                                <p className="mt-1 text-xs text-[#334155]">
+                                  Most likely HS code: <strong>{vi.likelyHts || "Pending more evidence"}</strong>
+                                </p>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-4 text-left" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex flex-wrap gap-1">
+                                {onSwitchToReviews && !isInsufficient && (
+                                  <>
+                                    <Button size="sm" variant="default" onClick={handleOpenReviews}>Accept</Button>
+                                    <Button size="sm" variant="outline" onClick={handleOpenReviews}>Override</Button>
+                                  </>
+                                )}
+                                <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setDrawerItem(vi); }}>
+                                  Explain
+                                </Button>
+                              </div>
+                            </td>
+                          </>
+                        )
+                      })()}
                     </tr>
                   ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-[#64748B]">
-                    No alternative classifications with material duty difference. {items.length > 0 ? "Declared HTS appears consistent." : "Upload documents and run analysis."}
+                  <td colSpan={6} className="px-4 py-8 text-center text-[#64748B]">
+                    {items.length > 0
+                      ? hasAnyDeclaredHts
+                        ? (isPreCompliance
+                            ? "No higher-priority HS code suggestions identified. Declared HTS appears consistent."
+                            : "No alternative classifications with material duty difference. Declared HTS appears consistent.")
+                        : "No declared HTS provided. Initial likely HS classifications are shown from available evidence."
+                      : "Upload documents and run analysis."}
                   </td>
                 </tr>
               )}
@@ -1449,51 +1705,155 @@ function AnalysisResultsView({
           open={!!drawerItem}
           onClose={() => setDrawerItem(null)}
           item={drawerItem || {}}
+          isPreCompliance={isPreCompliance}
           rawItem={drawerItem ? items[drawerItem.index] : undefined}
           evidenceMap={resultJson?.evidence_map}
           evidenceBundle={evidenceBundle}
         />
-        {shipmentAlerts.length > 0 && (
-          <div className="px-4 py-3 border-t bg-muted/20">
-            <p className="font-medium text-sm mb-2">Regulatory alerts for this shipment</p>
-            <div className="flex flex-wrap gap-2">
-              {shipmentAlerts.slice(0, 5).map((a: any) => (
-                <span key={a.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-xs">
-                  <code>{a.hts_code || "—"}</code>
-                  <span className="text-amber-800">{a.alert_type}</span>
-                  {a.duty_delta_estimate && <span className="text-green-700">{a.duty_delta_estimate}</span>}
-                </span>
-              ))}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          DOMAIN 2: DUTY COMPARISON (hidden when no items have supported classification)
+          ═══════════════════════════════════════════════════════════════════ */}
+      {(() => {
+        const dutyEligible = visibleRows.filter((vi: any) => {
+          const level = vi.classificationMemo?.support_level
+          const hasDeclaredHts = vi.hasDeclaredHts
+          return (level === "supported" || hasDeclaredHts) && !(vi.dutyScenarios?.unavailable)
+        })
+        if (dutyEligible.length === 0) return null
+        return (
+          <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b bg-muted/30">
+              <h3 className="font-semibold">Duty Impact Comparison</h3>
+              <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+                Duty estimates are approximations based on MFN rates. Verify amounts with your licensed broker before filing.
+              </p>
             </div>
-            <Link href="/app/psc-radar" className="text-blue-600 text-xs hover:underline mt-2 inline-block">View all compliance alerts</Link>
-          </div>
-        )}
-      </div>
-
-      {/* 4. Money impact panel — savings green (subtle), compressed */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm p-6">
-          <p className="text-4xl font-semibold text-green-700">${totalPotentialSavings.toLocaleString()}</p>
-          <p className="text-sm text-[#64748B] mt-1">Potential savings · Review before export.</p>
-        </div>
-        <div className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm p-6">
-          <p className="text-sm font-medium text-[#64748B] mb-3">Per-item breakdown</p>
-          <ul className="space-y-2">
-            {viewItems.filter((i: any) => (i.estimatedSavings || 0) > 0).map((vi: any) => (
-              <li key={vi.index} className="flex justify-between text-sm">
-                <span className="line-clamp-1">{vi.displayName}</span>
-                <span className="font-semibold text-green-700">${vi.estimatedSavings.toLocaleString()}</span>
-              </li>
-            ))}
-            {viewItems.filter((i: any) => (i.estimatedSavings || 0) > 0).length === 0 && (
-              <li className="text-muted-foreground text-sm">No items with identified savings.</li>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#F8FAFC]">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Item</th>
+                    <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Declared HTS</th>
+                    <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Suggested HTS</th>
+                    <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Declared duty (MFN est.)</th>
+                    {!isPreCompliance && <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Est. Savings</th>}
+                    <th className="px-4 py-3 text-left font-medium text-[#0F172A]">COO</th>
+                    <th className="px-4 py-3 text-left font-medium text-[#0F172A]">Basis</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dutyEligible.map((vi: any, rowIdx: number) => (
+                    <tr
+                      key={vi.index}
+                      className={`border-t border-[#E5E7EB] hover:bg-[#F8FAFC] ${rowIdx % 2 === 1 ? "bg-[#F8FAFC]/50" : ""}`}
+                    >
+                      <td className="px-4 py-4 text-left font-medium text-[#0F172A]">{vi.displayName}</td>
+                      <td className="px-4 py-4 text-left font-mono text-xs">{vi.declaredHts}</td>
+                      <td className="px-4 py-4 text-left font-mono text-xs font-bold">{vi.recommendedHts || "—"}</td>
+                      <td className="px-4 py-4 text-left text-xs">
+                        <div>Rate: <strong>{vi.currentDutyRate}</strong></div>
+                        {vi.dutyScenarios && !vi.dutyScenarios.unavailable && (
+                          <div className="mt-1 text-[10px] text-slate-600 leading-snug">
+                            Declared: {vi.dutyScenarios.declared_hts || "—"} · Suggested: {vi.dutyScenarios.suggested_hts || "—"}
+                          </div>
+                        )}
+                      </td>
+                      {!isPreCompliance && (
+                        <td className="px-4 py-4 text-left font-bold text-green-700">
+                          {vi.estimatedSavings > 0 ? `$${vi.estimatedSavings.toLocaleString()}` : "—"}
+                        </td>
+                      )}
+                      <td className="px-4 py-4 text-left text-xs text-[#64748B]">{vi.countryOfOrigin || "—"}</td>
+                      <td className="px-4 py-4 text-left text-[10px] text-slate-500">
+                        {vi.dutyScenarios?.basis?.disclaimer || "MFN rate estimate"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!isPreCompliance && totalPotentialSavings > 0 && (
+              <div className="px-4 py-3 border-t bg-green-50/50">
+                <p className="text-sm font-semibold text-green-800">
+                  Total potential savings: ${totalPotentialSavings.toLocaleString()}
+                </p>
+                <p className="text-[11px] text-green-700 mt-0.5">Review before export. Estimates only.</p>
+              </div>
             )}
-          </ul>
-        </div>
-      </div>
+          </div>
+        )
+      })()}
 
-      {/* 5. Why this applies — plain English, max 2 lines, no duplicate blocks */}
-      <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
+      {/* ═══════════════════════════════════════════════════════════════════
+          DOMAIN 3: REGULATORY (only shown when flags / alerts exist)
+          ═══════════════════════════════════════════════════════════════════ */}
+      {(regulatoryFlags.length > 0 || shipmentAlerts.length > 0) && (
+        <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b bg-amber-50/50">
+            <h3 className="font-semibold text-amber-900">Regulatory Flags</h3>
+            <p className="text-[11px] text-amber-800/80 mt-0.5">
+              Regulatory screening is advisory only. Confirm all requirements with your compliance officer.
+            </p>
+          </div>
+          <div className="px-4 py-3 space-y-3">
+            {regulatoryFlags.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-amber-900 mb-1">Applicable flags</p>
+                <ul className="text-sm text-amber-800 list-disc list-inside space-y-0.5">
+                  {regulatoryFlags.slice(0, 8).map((f, i) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                  {regulatoryFlags.length > 8 && (
+                    <li className="text-amber-700 font-medium">+{regulatoryFlags.length - 8} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
+            {shipmentAlerts.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-amber-900 mb-1">Compliance alerts</p>
+                <div className="flex flex-wrap gap-2">
+                  {shipmentAlerts.slice(0, 5).map((a: any) => (
+                    <span key={a.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-xs">
+                      <code>{a.hts_code || "—"}</code>
+                      <span className="text-amber-800">{a.alert_type}</span>
+                      {a.duty_delta_estimate && <span className="text-green-700">{a.duty_delta_estimate}</span>}
+                    </span>
+                  ))}
+                </div>
+                <Link href="/app/psc-radar" className="text-blue-600 text-xs hover:underline mt-2 inline-block">View all compliance alerts</Link>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-amber-100">
+              {onSwitchToDocuments && (
+                <Button size="sm" variant="outline" onClick={onSwitchToDocuments}>
+                  Request data sheet in Documents
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const note = `Broker note: Regulatory flags present for shipment ${shipmentId}. Please verify requirements before filing. Flags: ${regulatoryFlags.slice(0, 5).join("; ")}`
+                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                    void navigator.clipboard.writeText(note)
+                  }
+                }}
+              >
+                Copy note for broker
+              </Button>
+              {canOpenReviews && (
+                <Button size="sm" onClick={handleOpenReviews}>Mark for broker review</Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Why this applies — keep focused for entry compliance */}
+      {!isPreCompliance && <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b">
           <h3 className="font-semibold">Why this applies</h3>
         </div>
@@ -1513,7 +1873,7 @@ function AnalysisResultsView({
                 <div key={i} className="px-5 py-4">
                   <p className="text-sm line-clamp-2">
                     {count > 1 ? `${count} line items share the same classification issue. ` : ""}
-                    This item was classified under HTS {vi.declaredHts}. Alternative {vi.recommendedHts} shows {vi.estimatedSavings > 0 ? "lower duty" : "different duty structure"} based on similar classifications and available documentation.
+                    This item was classified under HTS {vi.declaredHts}. {isPreCompliance ? "Likely HS code suggestion" : "Alternative"} {vi.recommendedHts} shows {vi.estimatedSavings > 0 ? "lower duty" : "different duty structure"} based on similar classifications and available documentation.
                   </p>
                   <div className="flex flex-wrap gap-1 mt-2">
                     {vi.evidenceSources?.map((s: string, j: number) => (
@@ -1525,10 +1885,10 @@ function AnalysisResultsView({
             })
           })()}
         </div>
-      </div>
+      </div>}
 
       {/* 6. Collapsible advanced sections */}
-      <details className="rounded-2xl border bg-card shadow-sm divide-y">
+      {!isPreCompliance && <details className="rounded-2xl border bg-card shadow-sm divide-y">
         <summary className="px-5 py-4 cursor-pointer hover:bg-muted/30 list-none flex items-center justify-between">
           <span className="font-medium">Advanced — Structural Analysis, Evidence, Audit Trail</span>
           <span className="text-muted-foreground text-sm">Click to expand</span>
@@ -1540,7 +1900,7 @@ function AnalysisResultsView({
               {items.map((item: any, i: number) => (
                 <li key={i}>
                   {item.label || `Item ${i + 1}`}: HTS <code className="text-xs">{item.hts_code || "—"}</code>
-                  {item.classification?.primary_candidate && <> → alternative <code className="text-xs">{item.classification.primary_candidate.hts_code}</code></>}
+                  {item.classification?.primary_candidate && <> → {isPreCompliance ? "likely HS code" : "alternative"} <code className="text-xs">{item.classification.primary_candidate.hts_code}</code></>}
                 </li>
               ))}
             </ul>
@@ -1592,16 +1952,16 @@ function AnalysisResultsView({
             <p className="text-sm text-muted-foreground">{warnings.length} warning(s) in this analysis.</p>
           )}
         </div>
-      </details>
+      </details>}
 
-      {/* HS Code Review — clarification answers + alternatives (visible when questions exist) */}
-      {items.some((i: any) => i.classification?.candidates?.length || i.classification?.questions?.length || i.classification?.review_explanation || i.clarification_questions?.length || i.psc?.alternatives?.length) && (
+      {/* HS Code Review — clarification answers + suggestions (visible when questions exist) */}
+      {!isPreCompliance && items.some((i: any) => i.classification?.candidates?.length || i.classification?.questions?.length || i.classification?.review_explanation || i.clarification_questions?.length || i.psc?.alternatives?.length) && (
         <Card>
           <CardContent className="pt-6">
             <details className="group" open={hasClarificationQuestions}>
               <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground list-none flex items-center gap-2">
                 <span className="group-open:rotate-90 transition-transform">▸</span>
-                HS Code Review — {hasClarificationQuestions ? "Answer questions below, then Re-run" : "alternative codes, risk %, and clarification questions"}
+                HS Code Review — {hasClarificationQuestions ? "Answer questions below, then Re-run" : isPreCompliance ? "likely HS code suggestions and clarification questions" : "alternative codes, risk %, and clarification questions"}
               </summary>
               <div className="mt-3 space-y-4 pl-4 border-l-2 border-border">
                 {items.map((item: any, idx: number) => {
@@ -1690,8 +2050,8 @@ function AnalysisResultsView({
         </Card>
       )}
 
-      {/* Supplemental Evidence — only for items that need it or already have it, with Amazon / PDF / N/A options */}
-      {shipmentId && apiPost && apiPostForm && apiDelete && onRefresh && items.length > 0 && (() => {
+      {/* Supplemental Evidence — entry compliance only to keep pre-compliance action-focused */}
+      {!isPreCompliance && shipmentId && apiPost && apiPostForm && apiDelete && onRefresh && items.length > 0 && (() => {
         const displayItems = items.filter((item: any) => item.needs_supplemental_evidence || item.supplemental_evidence_source)
         if (displayItems.length === 0) return null
         return (

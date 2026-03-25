@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours
+    CLERK_JWKS_URL: Optional[str] = None  # e.g. https://<your-clerk>.clerk.accounts.dev/.well-known/jwks.json
+    CLERK_JWT_ISSUER: Optional[str] = None  # e.g. https://<your-clerk>.clerk.accounts.dev
+    CLERK_JWT_AUDIENCE: Optional[str] = None  # Expected aud claim (e.g. your Clerk frontend API key)
+    CLERK_JWT_VERIFY: bool = False  # Enable signature + expiry verification (requires CLERK_JWKS_URL)
     SPRINT12_DEV_AUTO_PROVISION: bool = False  # Explicit dev-only gate for user auto-provisioning
     ENTITLEMENT_UNLIMITED_EMAILS: str = ""  # Comma-separated emails with unlimited entitlement (e.g. testing accounts)
     SPRINT12_INLINE_ANALYSIS_DEV: bool = True  # Dev fallback when Celery worker is unavailable
@@ -35,6 +39,11 @@ class Settings(BaseSettings):
     SPRINT12_FAST_ANALYSIS_DEV: bool = True  # Dev fallback to avoid long-running external engine dependencies
     SPRINT12_INSTANT_ANALYSIS_DEV: bool = False  # When True (dev only), skip pipeline and return minimal COMPLETE result immediately so UI works
     PSC_DUTY_THRESHOLD: float = 1000.0  # Min duty (USD) to run PSC Radar in fast path; set lower (e.g. 100) for more coverage
+    # Rule layer mode for classification:
+    # - off: disable deterministic rule layer
+    # - shadow: compute rule assessment but do not alter candidate ranking
+    # - enforce: compute + apply heading bias to candidate ranking
+    CLASSIFICATION_RULE_MODE: str = "enforce"
     
     # Anthropic API
     ANTHROPIC_API_KEY: str
@@ -76,6 +85,31 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: Optional[str] = None  # AWS secret key (optional - can use IAM role)
     S3_ENDPOINT_URL: Optional[str] = None  # Custom S3 endpoint (for LocalStack, MinIO, etc.)
     
+    def model_post_init(self, __context: object) -> None:
+        import logging
+        _logger = logging.getLogger("neco.config")
+        # Policy: only local dev machine names may boot without verified JWT.
+        # Staging, production, demo, test harnesses on shared hosts, etc. must verify.
+        _local_dev_envs = frozenset({"development", "dev", "local"})
+        env_lower = self.ENVIRONMENT.strip().lower()
+        is_local_dev = env_lower in _local_dev_envs
+        if not self.CLERK_JWT_VERIFY or not self.CLERK_JWKS_URL:
+            if not is_local_dev:
+                raise ValueError(
+                    "Externally reachable deploys require Clerk JWT verification. "
+                    "Set CLERK_JWT_VERIFY=true and CLERK_JWKS_URL. "
+                    "Set CLERK_JWT_ISSUER to your Clerk issuer URL; set CLERK_JWT_AUDIENCE "
+                    "if your tokens include aud and you use multiple Clerk apps. "
+                    f"Current ENVIRONMENT={self.ENVIRONMENT!r}. "
+                    "Only ENVIRONMENT=development, dev, or local may run without verified JWTs."
+                )
+            _logger.warning(
+                "JWT verification DISABLED (CLERK_JWT_VERIFY=%s, CLERK_JWKS_URL=%s). "
+                "Acceptable only for local dev (ENVIRONMENT=development|dev|local).",
+                self.CLERK_JWT_VERIFY,
+                "set" if self.CLERK_JWKS_URL else "unset",
+            )
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -36,7 +36,11 @@ class BrokerExportService:
         Returns:
             JSON string
         """
-        return json.dumps(bundle.to_dict(), indent=2, default=str)
+        data = bundle.to_dict()
+        data["export_provenance"] = {
+            "exported_at": datetime.utcnow().isoformat(),
+        }
+        return json.dumps(data, indent=2, default=str)
     
     def export_csv(self, bundle: FilingPrepBundle) -> str:
         """

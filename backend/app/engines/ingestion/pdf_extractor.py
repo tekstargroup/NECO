@@ -6,6 +6,8 @@ import pdfplumber
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
+import fitz
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,35 @@ class PDFExtractor:
     
     def __init__(self):
         self.supported_extensions = [".pdf"]
+        self._rapid_ocr = None
+
+    def _extract_text_with_local_ocr(self, pdf_path: Path) -> str:
+        """
+        OCR scanned PDFs locally as fallback when embedded text extraction is empty.
+        """
+        try:
+            if self._rapid_ocr is None:
+                from rapidocr_onnxruntime import RapidOCR
+                self._rapid_ocr = RapidOCR()
+
+            doc = fitz.open(pdf_path)
+            chunks: List[str] = []
+            max_pages = min(len(doc), 12)
+            for i in range(max_pages):
+                page = doc[i]
+                # Scale improves OCR quality for datasheets.
+                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+                ocr_result, _ = self._rapid_ocr(img)
+                if not ocr_result:
+                    continue
+                page_lines = [str(row[1]).strip() for row in ocr_result if row and len(row) > 1 and str(row[1]).strip()]
+                if page_lines:
+                    chunks.append("\n".join(page_lines))
+            return "\n\n".join(chunks).strip()
+        except Exception as e:
+            logger.warning("Local OCR fallback failed for %s: %s", pdf_path, e)
+            return ""
     
     def extract_text(self, pdf_path: Path) -> Dict[str, Any]:
         """
@@ -34,7 +65,8 @@ class PDFExtractor:
             "pages": [],
             "page_count": 0,
             "tables": [],
-            "error": None
+            "error": None,
+            "ocr_used": False,
         }
         
         try:
@@ -67,6 +99,12 @@ class PDFExtractor:
                             })
                 
                 result["text"] = "\n\n".join(all_text)
+                if not result["text"].strip():
+                    # Scanned/image-only PDF fallback.
+                    ocr_text = self._extract_text_with_local_ocr(pdf_path)
+                    if ocr_text:
+                        result["text"] = ocr_text
+                        result["ocr_used"] = True
                 result["success"] = True
                 
         except Exception as e:

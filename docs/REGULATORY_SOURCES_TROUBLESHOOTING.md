@@ -1,6 +1,6 @@
 # Regulatory Sources — Troubleshooting
 
-**Last updated:** March 18, 2026
+**Last updated:** March 24, 2026
 
 ---
 
@@ -36,7 +36,7 @@ python scripts/test_one_source.py CBP_CSMS
 
 See **`docs/SOURCE_VALIDATION_GUIDE.md`** for per-source status and how to fix URLs.
 
-Expected: 10+ OK, some empty (feeds with no items).
+Expected (good network + `CONGRESS_API_KEY`): **most sources OK**; common **empty** cases: **USITC_HTS** (diff-based), **USDA_FSIS** (WAF/proxy). Full change log: [SPRINT20_PROGRESS.md](SPRINT20_PROGRESS.md) → *Source validation, feed hardening & docs*.
 
 ### 4. **Poll now, Process, Refresh HTS**
 
@@ -53,12 +53,11 @@ Expected: 10+ OK, some empty (feeds with no items).
 
 | Source | Notes |
 |--------|-------|
-| CBP_DUTY_RATES, CBP_LEGAL_DECISIONS | URL exists but feed may have no items |
-| WHITE_HOUSE_BRIEFING | Feed URL may have changed |
-| EU_TAXUD | EU moved to taxation-customs.ec.europa.eu |
-| JOC, SUPPLY_CHAIN_DIVE, FLEXPORT_BLOG | Commercial feeds may have changed |
-| USDA_FSIS | May block non-browser User-Agent |
+| CBP_DUTY_RATES, CBP_LEGAL_DECISIONS, CBP_UBR, CBP_QUOTA_BULLETINS | Share **main trade RSS** with CSMS — **deduped by URL**; “empty” can mean URLs already stored under another source name. |
+| USITC_HTS | **Diff-based** — empty until USITC release changes. |
+| USDA_FSIS | API + RSS fallback; still **blocked** on some IPs (HTML error page). Poller uses browser-like **User-Agent**. |
 | CONGRESS_GOV | Requires `CONGRESS_API_KEY` env var |
+| JOC, SUPPLY_CHAIN_DIVE, LOADSTAR, EU_TAXUD, WHITE_HOUSE_BRIEFING | URLs fixed March 2026; if a site moves again, update `sources_config.json` — see [SOURCE_VALIDATION_GUIDE.md](SOURCE_VALIDATION_GUIDE.md) |
 
 ---
 

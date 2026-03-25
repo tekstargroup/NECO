@@ -28,6 +28,7 @@ from app.models.regulatory_evaluation import RegulatoryEvaluation, RegulatoryCon
 from app.models.export import Export, ExportType, ExportStatus
 from app.models.shipment import Shipment
 from app.services.s3_upload_service import get_s3_client
+from app.services.shipment_analysis_service import stable_classification_outcome
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -311,18 +312,44 @@ class ExportService:
                 "condition_evaluations": conditions_data
             })
         
+        items_trust = []
+        for it in snapshot.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            memo = it.get("classification_memo") or {}
+            items_trust.append({
+                "id": it.get("id"),
+                "label": it.get("label"),
+                "hts_code": it.get("hts_code"),
+                "classification_outcome": it.get("classification_outcome") or stable_classification_outcome(memo.get("support_level", "")),
+                "classification_memo": memo,
+                "duty_scenarios": it.get("duty_scenarios"),
+                "evidence_used": it.get("evidence_used", []),
+                "open_questions": memo.get("open_questions", []),
+            })
+
         # Build canonical export JSON
         export_json = {
+            "schema_version": "2.0",
             "export_type": "AUDIT_PACK",
             "generated_at": datetime.utcnow().isoformat(),
             "review_id": str(review.id),
             "hts_version_id": review.hts_version_id,
-            "review_status": review.status.value,
+            "review_status": review.status.value if hasattr(review.status, "value") else str(review.status),
+            "analysis_provenance": snapshot.get("analysis_provenance") or snapshot.get("provenance"),
+            "export_provenance": {
+                "neco_version": getattr(settings, "APP_VERSION", "unknown"),
+                "exported_at": datetime.utcnow().isoformat(),
+            },
             "snapshot_json": snapshot,
             "regulatory_evaluations": reg_evals_data,
             "evidence_map": snapshot.get("evidence_map", {}),
             "warnings": snapshot.get("evidence_map", {}).get("warnings", []),
-            "extraction_errors": snapshot.get("evidence_map", {}).get("extraction_errors", [])
+            "extraction_errors": snapshot.get("evidence_map", {}).get("extraction_errors", []),
+            "blocking_reasons": snapshot.get("blockers", []),
+            "import_summary": snapshot.get("import_summary"),
+            "item_decisions": getattr(review, "item_decisions", None) or {},
+            "trust_line_items": items_trust,
         }
         
         return export_json
@@ -346,13 +373,38 @@ class ExportService:
                 "explanation": reg_eval.explanation_text
             })
         
+        items_trust = []
+        for it in snapshot.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            b_memo = it.get("classification_memo") or {}
+            items_trust.append({
+                "id": it.get("id"),
+                "label": it.get("label"),
+                "hts_code": it.get("hts_code"),
+                "classification_outcome": it.get("classification_outcome") or stable_classification_outcome(b_memo.get("support_level", "")),
+                "classification_memo": b_memo,
+                "duty_scenarios": it.get("duty_scenarios"),
+                "evidence_used": it.get("evidence_used", []),
+                "open_questions": b_memo.get("open_questions", []),
+            })
+
         export_json = {
+            "schema_version": "2.0",
             "export_type": "BROKER_PREP",
             "generated_at": datetime.utcnow().isoformat(),
             "review_id": str(review.id),
             "hts_version_id": review.hts_version_id,
+            "analysis_provenance": snapshot.get("analysis_provenance") or snapshot.get("provenance"),
+            "export_provenance": {
+                "neco_version": getattr(settings, "APP_VERSION", "unknown"),
+                "exported_at": datetime.utcnow().isoformat(),
+            },
             "items": snapshot.get("items", []),
             "regulatory_evaluations_summary": reg_summary,
+            "import_summary": snapshot.get("import_summary"),
+            "item_decisions": getattr(review, "item_decisions", None) or {},
+            "trust_line_items": items_trust,
             "no_recommendations": True,
             "disclaimer": "Decision support only, not legal advice, not filing"
         }
@@ -369,9 +421,20 @@ class ExportService:
         
         output = StringIO()
         writer = csv.writer(output)
+
+        # Metadata rows
+        writer.writerow(["# schema_version", "2.0"])
+        provenance = snapshot.get("analysis_provenance") or snapshot.get("provenance") or {}
+        writer.writerow(["# neco_version", provenance.get("neco_version", "")])
+        import_summary = snapshot.get("import_summary") or {}
+        writer.writerow(["# import_items_count", import_summary.get("items_imported", "")])
+        writer.writerow([])
         
         # Header
-        writer.writerow(["Item ID", "Label", "HTS Code", "Value", "Quantity", "UOM", "COO", "Regulatory Notes"])
+        writer.writerow([
+            "Item ID", "Label", "HTS Code", "Classification Outcome",
+            "Value", "Quantity", "UOM", "COO", "Regulatory Notes",
+        ])
         
         # Item rows
         for item in items:
@@ -381,15 +444,17 @@ class ExportService:
             quantity = item.get("quantity") or ""
             uom = item.get("uom") or ""
             coo = item.get("country_of_origin") or ""
+            memo = item.get("classification_memo") or {}
+            support_level = memo.get("support_level", "") if isinstance(memo, dict) else ""
+            outcome = item.get("classification_outcome") or stable_classification_outcome(support_level)
             
-            # Get regulatory summary for this item
             regulatory = item.get("regulatory", [])
             reg_notes = "; ".join([
                 f"{r.get('regulator', {}).get('value', '')}: {r.get('outcome', {}).get('value', '')}"
                 for r in regulatory
             ])
             
-            writer.writerow([item.get("id"), label, hts_code, value, quantity, uom, coo, reg_notes])
+            writer.writerow([item.get("id"), label, hts_code, outcome, value, quantity, uom, coo, reg_notes])
         
         return output.getvalue()
     
@@ -500,17 +565,25 @@ This is a placeholder PDF. Full PDF generation will be implemented in a future s
         
         # Local fallback when S3 is not configured.
         if not settings.S3_BUCKET_NAME:
-            local_path = Path("backend/data/local_exports") / s3_key
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            local_path.write_bytes(file_content)
+            import asyncio
+            def _write_local():
+                local_path = Path("backend/data/local_exports") / s3_key
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                local_path.write_bytes(file_content)
+            await asyncio.get_event_loop().run_in_executor(None, _write_local)
             return sha256_hash
 
-        # Upload to S3
-        self.s3_client.put_object(
-            Bucket=settings.S3_BUCKET_NAME,
-            Key=s3_key,
-            Body=file_content,
-            ContentType="application/zip"
+        # Upload to S3 (sync boto3 call — offload to thread pool)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: self.s3_client.put_object(
+                Bucket=settings.S3_BUCKET_NAME,
+                Key=s3_key,
+                Body=file_content,
+                ContentType="application/zip",
+            ),
         )
         
         return sha256_hash

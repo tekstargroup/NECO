@@ -113,6 +113,45 @@ class DocumentResponse(BaseModel):
     file_size: Optional[str]
     uploaded_at: str
     retention_expires_at: str
+    processing_status: Optional[str] = None
+    extraction_method: Optional[str] = None
+    ocr_used: Optional[bool] = None
+    page_count: Optional[int] = None
+    char_count: Optional[int] = None
+    table_detected: Optional[bool] = None
+    extraction_status: Optional[str] = None
+    usable_for_analysis: Optional[bool] = None
+    data_sheet_user_confirmed: bool = False
+
+
+def _shipment_document_to_response(doc: ShipmentDocument) -> dict:
+    text = doc.extracted_text or ""
+    char_count = doc.char_count
+    if char_count is None and doc.extracted_text is not None:
+        char_count = len(text)
+    return {
+        "id": str(doc.id),
+        "shipment_id": str(doc.shipment_id),
+        "document_type": doc.document_type.value,
+        "filename": doc.filename,
+        "file_size": doc.file_size,
+        "uploaded_at": doc.uploaded_at.isoformat(),
+        "retention_expires_at": doc.retention_expires_at.isoformat(),
+        "processing_status": doc.processing_status,
+        "extraction_method": doc.extraction_method,
+        "ocr_used": doc.ocr_used,
+        "page_count": doc.page_count,
+        "char_count": char_count,
+        "table_detected": doc.table_detected,
+        "extraction_status": doc.extraction_status,
+        "usable_for_analysis": doc.usable_for_analysis,
+        "data_sheet_user_confirmed": bool(getattr(doc, "data_sheet_user_confirmed", False)),
+    }
+
+
+class DataSheetConfirmRequest(BaseModel):
+    """User attestation that a data sheet is acceptable as evidence (Sprint B)."""
+    confirmed: bool = True
 
 
 class UpdateDocumentTypeRequest(BaseModel):
@@ -149,15 +188,7 @@ async def update_document_type(
     doc.document_type = request.document_type
     await db.commit()
     await db.refresh(doc)
-    return {
-        "id": str(doc.id),
-        "shipment_id": str(doc.shipment_id),
-        "document_type": doc.document_type.value,
-        "filename": doc.filename,
-        "file_size": doc.file_size,
-        "uploaded_at": doc.uploaded_at.isoformat(),
-        "retention_expires_at": doc.retention_expires_at.isoformat()
-    }
+    return _shipment_document_to_response(doc)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -327,18 +358,38 @@ async def list_shipment_documents(
     )
     documents = result.scalars().all()
     
-    return [
-        {
-            "id": str(doc.id),
-            "shipment_id": str(doc.shipment_id),
-            "document_type": doc.document_type.value,
-            "filename": doc.filename,
-            "file_size": doc.file_size,
-            "uploaded_at": doc.uploaded_at.isoformat(),
-            "retention_expires_at": doc.retention_expires_at.isoformat()
-        }
-        for doc in documents
-    ]
+    return [_shipment_document_to_response(doc) for doc in documents]
+
+
+@router.patch("/{document_id}/data-sheet-confirmation", response_model=DocumentResponse)
+async def patch_data_sheet_confirmation(
+    document_id: UUID,
+    request: DataSheetConfirmRequest,
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record explicit user confirmation for a data sheet (in addition to extraction truth)."""
+    result = await db.execute(
+        select(ShipmentDocument).where(
+            and_(
+                ShipmentDocument.id == document_id,
+                ShipmentDocument.organization_id == current_org.id,
+            )
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found or access denied")
+    if doc.document_type != ShipmentDocumentType.DATA_SHEET:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Confirmation is only applicable to DATA_SHEET documents",
+        )
+    doc.data_sheet_user_confirmed = bool(request.confirmed)
+    await db.commit()
+    await db.refresh(doc)
+    return _shipment_document_to_response(doc)
 
 
 @router.get("/{document_id}/table-preview")
@@ -420,3 +471,74 @@ async def get_download_url(
         "download_url": download_url,
         "expires_in": expires_in
     }
+
+
+@router.post("/{document_id}/reprocess")
+async def reprocess_document(
+    document_id: UUID,
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-extract text and structured data for a single document."""
+    import asyncio
+    from pathlib import Path
+    from app.core.config import settings
+    from app.engines.ingestion.document_processor import DocumentProcessor
+    from app.services.shipment_analysis_service import (
+        apply_ingestion_metadata_to_shipment_document,
+        enrich_structured_data_with_extraction,
+    )
+
+    result = await db.execute(
+        select(ShipmentDocument).where(
+            and_(ShipmentDocument.id == document_id, ShipmentDocument.organization_id == current_org.id)
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    local_path = None
+    if not settings.S3_BUCKET_NAME:
+        safe_name = doc.s3_key.replace("/", "_")
+        local_path = settings.MOCK_UPLOADS_DIR / safe_name
+        for candidate in (
+            Path("backend/data/mock_uploads") / safe_name,
+            Path.cwd() / "data" / "mock_uploads" / safe_name,
+        ):
+            if not local_path.exists() and candidate.exists():
+                local_path = candidate
+        if local_path and not local_path.exists() and doc.filename and settings.MOCK_UPLOADS_DIR.exists():
+            for f in settings.MOCK_UPLOADS_DIR.iterdir():
+                if f.is_file() and f.name == doc.filename:
+                    local_path = f
+                    break
+    if not local_path or not local_path.exists():
+        raise HTTPException(status_code=404, detail="File not found for reprocessing (local storage)")
+
+    processor = DocumentProcessor()
+    hint = doc.document_type.value if doc.document_type else None
+    try:
+        process_result = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(
+                None, lambda: processor.process_document(local_path, document_type_hint=hint)
+            ),
+            timeout=90.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Reprocessing timed out")
+
+    if not process_result.get("success"):
+        raise HTTPException(status_code=422, detail=process_result.get("error", "Extraction failed"))
+
+    doc.extracted_text = process_result.get("extracted_text")
+    doc.structured_data = enrich_structured_data_with_extraction(
+        process_result.get("structured_data"),
+        process_result.get("extracted_text") or "",
+    )
+    apply_ingestion_metadata_to_shipment_document(doc, process_result)
+    doc.processing_status = "COMPLETED"
+    await db.commit()
+    await db.refresh(doc)
+    return _shipment_document_to_response(doc)

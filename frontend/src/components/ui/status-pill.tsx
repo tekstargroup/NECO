@@ -21,9 +21,32 @@ const statusColors: Record<string, string> = {
   ANALYZING: "bg-yellow-100 text-yellow-700 border-yellow-300",
   QUEUED: "bg-yellow-100 text-yellow-700 border-yellow-300",
   RUNNING: "bg-yellow-100 text-yellow-700 border-yellow-300",
-  COMPLETE: "bg-slate-100 text-slate-700 border-slate-300", // Neutral, not green
+  PROCESSING: "bg-blue-100 text-blue-700 border-blue-300",
+  COMPLETE: "bg-slate-100 text-slate-700 border-slate-300",
+  COMPLETED: "bg-green-100 text-green-700 border-green-300",
   REFUSED: "bg-orange-100 text-orange-700 border-orange-300",
   FAILED: "bg-red-100 text-red-700 border-red-300",
+  REVIEW_REQUIRED: "bg-red-100 text-red-700 border-red-300",
+  PARTIALLY_REVIEWED: "bg-amber-100 text-amber-700 border-amber-300",
+  REVIEWED_ACCEPTED: "bg-green-100 text-green-700 border-green-300",
+  REVIEWED_REJECTED: "bg-red-100 text-red-700 border-red-300",
+  BLOCKED: "bg-red-100 text-red-700 border-red-300",
+  EXPORTED: "bg-green-100 text-green-700 border-green-300",
+  EXPORT_PENDING: "bg-amber-100 text-amber-700 border-amber-300",
+}
+
+const displayLabels: Record<string, string> = {
+  COMPLETE: "ANALYSIS GENERATED",
+  READY: "READY FOR CLASSIFICATION",
+  REVIEW_REQUIRED: "REVIEW REQUIRED",
+  PARTIALLY_REVIEWED: "PARTIALLY REVIEWED",
+  REVIEWED_ACCEPTED: "ACCEPTED",
+  REVIEWED_REJECTED: "REJECTED",
+  BLOCKED: "BLOCKED",
+  PROCESSING: "PROCESSING",
+  COMPLETED: "COMPLETED",
+  EXPORTED: "EXPORTED",
+  EXPORT_PENDING: "EXPORT PENDING",
 }
 
 export function StatusPill({ status, className }: StatusPillProps) {
@@ -37,7 +60,7 @@ export function StatusPill({ status, className }: StatusPillProps) {
         className
       )}
     >
-      {status}
+      {displayLabels[status] || status}
     </span>
   )
 }

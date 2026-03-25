@@ -133,7 +133,7 @@ class ReviewService:
         if not is_valid:
             raise ValueError(error_msg)
         
-        # Update status (immutable - we're updating timestamps, not snapshot)
+        previous_status = record.status
         record.status = new_status
         record.reviewed_at = datetime.utcnow()
         record.reviewed_by = reviewed_by
@@ -141,9 +141,12 @@ class ReviewService:
         record.review_notes = notes
         
         await self.db.flush()
-        
+
+        if new_status == ReviewStatus.REVIEWED_ACCEPTED:
+            await self._record_product_knowledge(record, reviewed_by)
+
         logger.info(
-            f"Transitioned review record {review_id} from {record.status.value} "
+            f"Transitioned review record {review_id} from {previous_status.value} "
             f"to {new_status.value} by {reviewed_by} ({user_role})"
         )
         
@@ -251,3 +254,46 @@ class ReviewService:
         overrides = list(result.scalars().all())
         
         return [original] + overrides
+
+    async def _record_product_knowledge(self, record: ReviewRecord, accepted_by: str) -> None:
+        """On acceptance, record each item's HTS in the product knowledge base."""
+        try:
+            from app.services.product_knowledge_service import ProductKnowledgeService
+            from app.models.shipment import Shipment
+            knowledge_svc = ProductKnowledgeService(self.db)
+            snapshot = record.object_snapshot or {}
+            items = snapshot.get("items") or []
+            shipment_id_str = snapshot.get("shipment_id")
+            if not shipment_id_str:
+                return
+            shipment_result = await self.db.execute(
+                select(Shipment).where(Shipment.id == UUID(shipment_id_str))
+            )
+            shipment_obj = shipment_result.scalar_one_or_none()
+            if not shipment_obj:
+                return
+            org_id = shipment_obj.organization_id
+            provenance = snapshot.get("analysis_provenance")
+
+            for it in items:
+                hts = it.get("hts_code")
+                label = it.get("label")
+                if not hts or not label:
+                    continue
+                memo = it.get("classification_memo") or {}
+                if memo.get("support_level") != "supported":
+                    continue
+                await knowledge_svc.record_acceptance(
+                    organization_id=org_id,
+                    description=label,
+                    hts_code=hts,
+                    country_of_origin=it.get("country_of_origin"),
+                    confidence=memo.get("proposed_hts_confidence"),
+                    source_review_id=record.id,
+                    source_shipment_id=UUID(shipment_id_str) if shipment_id_str else None,
+                    source_item_id=UUID(it["id"]) if it.get("id") else None,
+                    accepted_by=accepted_by,
+                    provenance=provenance,
+                )
+        except Exception as e:
+            logger.warning(f"Failed to record product knowledge on acceptance: {e}", exc_info=True)

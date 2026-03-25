@@ -95,23 +95,10 @@ def build_story(styles):
             "See if there's an API call when searching",
             "If no API: consider Playwright/headless browser",
         ]),
-        ("WHITE_HOUSE_BRIEFING", [
-            "404 — feed moved",
-            "Visit https://www.whitehouse.gov/briefing-room/",
-            "Look for RSS link in page source or footer",
-            "May need different URL or accept no RSS",
-        ]),
-        ("SUPPLY_CHAIN_DIVE", [
-            "404 — no native RSS found",
-            "Check if site offers RSS",
-            "Option: use rss.app to generate feed from supplychaindive.com",
-            "Or remove source if not critical",
-        ]),
-        ("FLEXPORT_BLOG", [
-            "404 — feed may have moved",
-            "Visit https://www.flexport.com/blog/",
-            "Check for RSS link",
-            "If none: remove or use third-party RSS generator",
+        ("LOADSTAR", [
+            "Working: https://theloadstar.com/feed/",
+            "Logistics/trade news (stand-in for Flexport blog RSS)",
+            "If feed fails: check The Loadstar site for new feed URL",
         ]),
         ("WTO_DISPUTES", [
             "Verify library RSS works",

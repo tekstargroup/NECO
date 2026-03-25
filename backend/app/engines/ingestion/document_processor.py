@@ -269,7 +269,8 @@ class DocumentProcessor:
                     result["metadata"] = {
                         "page_count": extraction_result["page_count"],
                         "has_tables": len(extraction_result["tables"]) > 0,
-                        "table_count": len(extraction_result["tables"])
+                        "table_count": len(extraction_result["tables"]),
+                        "ocr_used": bool(extraction_result.get("ocr_used")),
                     }
                 else:
                     result["error"] = extraction_result["error"]
@@ -289,7 +290,9 @@ class DocumentProcessor:
                     result["extracted_text"] = "\n".join(text_parts)
                     result["metadata"] = {
                         "sheet_count": len(extraction_result["sheets"]),
-                        "sheets": [s["sheet_name"] for s in extraction_result["sheets"]]
+                        "sheets": [s["sheet_name"] for s in extraction_result["sheets"]],
+                        "extraction_method": "spreadsheet",
+                        "ocr_used": False,
                     }
                     result["_excel_sheets"] = extraction_result["sheets"]  # Keep for line_items fallback
                 else:
@@ -304,6 +307,8 @@ class DocumentProcessor:
                     result["metadata"] = {
                         "paragraph_count": extraction_result.get("paragraph_count", 0),
                         "table_count": extraction_result.get("table_count", 0),
+                        "extraction_method": "docx",
+                        "ocr_used": False,
                     }
                 else:
                     result["error"] = extraction_result.get("error", "DOCX extraction failed")
