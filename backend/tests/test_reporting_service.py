@@ -51,6 +51,50 @@ async def test_classification_risk_report(reporting_service, mock_db):
 
 
 @pytest.mark.asyncio
+async def test_classification_risk_report_buckets_by_status_not_similarity(reporting_service, mock_db):
+    """Patch A: buckets follow output.status; high similarity must not force high bucket alone."""
+    from unittest.mock import MagicMock
+
+    def _rec(status: str, metadata_sim: float = 0.99):
+        r = MagicMock()
+        r.id = f"id-{status}"
+        r.object_snapshot = {
+            "output": {"status": status},
+            "metadata": {"best_similarity": metadata_sim},
+        }
+        return r
+
+    r_unknown = MagicMock()
+    r_unknown.id = "id-empty-status"
+    r_unknown.object_snapshot = {"output": {"status": ""}, "metadata": {"best_similarity": 0.99}}
+
+    records = [
+        _rec("SUCCESS", 0.10),
+        _rec("REVIEW_REQUIRED", 0.99),
+        _rec("NO_CONFIDENT_MATCH", 0.99),
+        _rec("NO_GOOD_MATCH", 0.50),
+        _rec("CLARIFICATION_REQUIRED", 0.99),
+        r_unknown,
+    ]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = records
+    mock_db._execute_result = mock_result
+
+    report = await reporting_service.generate_classification_risk_report()
+    buckets = report["risk_buckets"]
+    low = buckets["low_confidence"]["record_ids"]
+    med = buckets["medium_confidence"]["record_ids"]
+    high = buckets["high_confidence"]["record_ids"]
+
+    assert "id-SUCCESS" in high
+    assert "id-REVIEW_REQUIRED" in med
+    assert "id-NO_CONFIDENT_MATCH" in low
+    assert "id-NO_GOOD_MATCH" in low
+    assert "id-CLARIFICATION_REQUIRED" in low
+    assert "id-empty-status" in med  # unknown/empty status → medium
+
+
+@pytest.mark.asyncio
 async def test_psc_exposure_report(reporting_service, mock_db):
     """Test: PSC Exposure Report generation."""
     from unittest.mock import MagicMock

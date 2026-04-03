@@ -1,5 +1,21 @@
 # Sprint 12 QA Gate
 
+## Repeatable “did we break anything?” (local)
+
+From repo root (Postgres + `backend/.env` required for pytest):
+
+```bash
+./scripts/local_quality_gate.sh
+```
+
+This runs **backend `pytest tests/`**, then **frontend `lint` + `production build`**. To also run **Playwright** smoke after the static gate (API + Next must be up, seed + dev auth configured):
+
+```bash
+RUN_PLAYWRIGHT=1 ./scripts/local_quality_gate.sh
+```
+
+Playwright is already wired (`frontend/playwright.config.ts`, `frontend/tests/smoke/`). One-time browser install: `cd frontend && npm run qa:playwright:install`.
+
 ## One-time setup
 
 1. Install frontend dependencies:

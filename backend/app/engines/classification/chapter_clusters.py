@@ -33,6 +33,15 @@ CHAPTER_CLUSTERS: Dict[str, List[ChapterCluster]] = {
             use_case="Primary function determines which chapter: communication/audio devices → 85, computing devices → 84"
         )
     ],
+
+    "electronics_computing": [
+        ChapterCluster(
+            product_family="electronics_computing",
+            chapters=[84, 85],
+            rationale="Servers and computing units: Chapter 84 (automatic data processing machines, 8471) vs Chapter 85 (electrical apparatus not elsewhere specified). Phase 1 guardrail routes these before generic container/food flows.",
+            use_case="ADP / servers / compute nodes → prioritize 84 vs 85 boundary analysis"
+        )
+    ],
     
     "networking_equipment": [
         ChapterCluster(
@@ -103,6 +112,15 @@ CHAPTER_CLUSTERS: Dict[str, List[ChapterCluster]] = {
             chapters=[94, 44],
             rationale="Furniture is primarily in Chapter 94 (furniture and bedding). However, unfinished wood furniture may be in Chapter 44 (wood).",
             use_case="Finished furniture → 94, Unfinished wood furniture → 44"
+        )
+    ],
+
+    "fasteners_hardware": [
+        ChapterCluster(
+            product_family="fasteners_hardware",
+            chapters=[73, 74, 83],
+            rationale="Threaded fasteners and washers are typically classified in Chapter 73 (iron/steel articles), 74 (copper), or 83 (miscellaneous articles of base metal) depending on material and article type.",
+            use_case="Steel screws/bolts/washers → 73; copper/brass hardware → 74; miscellaneous metal fittings → 83"
         )
     ],
 }

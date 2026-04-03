@@ -12,9 +12,8 @@ from dataclasses import dataclass, asdict
 
 from app.engines.classification.required_attributes import (
     ProductFamily,
-    identify_product_family,
+    select_product_family,
     get_required_attributes,
-    get_question_for_attribute,
 )
 from app.engines.classification.attribute_maps import (
     get_attribute_map,
@@ -42,6 +41,8 @@ class ProductAnalysis:
     """Structured product analysis output."""
     product_type: str  # General product category
     product_family: ProductFamily
+    family_selection_confidence: float  # Router confidence for chosen family (Patch C)
+    family_matched_rule: str  # Which routing rule matched (audit)
     extracted_attributes: Dict[str, ExtractedAttribute]
     missing_required_attributes: List[str]
     suggested_chapters: List[Dict[str, Any]]  # [{"chapter": 85, "confidence": 0.85}]
@@ -78,11 +79,31 @@ class ProductAnalyzer:
         """
         logger.info(f"Analyzing product: {description[:100]}...")
         
-        # Identify product family
-        product_family = identify_product_family(description, {})
-        
-        # Extract attributes using LLM (structured extraction only)
-        extracted_attributes = await self._extract_attributes(description, product_family)
+        # Patch C: rule-first family selection, then extract; refine family using extracted hints
+        fs_initial = select_product_family(description, {})
+        extracted_attributes = await self._extract_attributes(description, fs_initial.family)
+        slim = {
+            k: ext.value
+            for k, ext in extracted_attributes.items()
+            if ext.value is not None and ext.value != ""
+        }
+        fs_refined = select_product_family(description, slim)
+        product_family = fs_refined.family
+        family_selection_confidence = fs_refined.confidence
+        family_matched_rule = fs_refined.matched_rule
+        if fs_refined.family != fs_initial.family:
+            extracted_attributes = await self._extract_attributes(description, product_family)
+            fs_refined = select_product_family(
+                description,
+                {
+                    k: ext.value
+                    for k, ext in extracted_attributes.items()
+                    if ext.value is not None and ext.value != ""
+                },
+            )
+            product_family = fs_refined.family
+            family_selection_confidence = fs_refined.confidence
+            family_matched_rule = fs_refined.matched_rule
         
         # Identify missing required attributes
         required_attrs = get_required_attributes(product_family)
@@ -94,11 +115,19 @@ class ProductAnalyzer:
         # Suggest likely chapters (informational, not classification)
         suggested_chapters = self._suggest_chapters(description, product_family, extracted_attributes)
         
-        # Compute analysis confidence
-        analysis_confidence = self._compute_confidence(extracted_attributes, required_attrs, missing_required)
+        # Compute analysis confidence (UNKNOWN is never "full confidence")
+        analysis_confidence = self._compute_confidence(
+            extracted_attributes,
+            required_attrs,
+            missing_required,
+            product_family,
+            family_selection_confidence,
+        )
         
         # Generate rationale
-        rationale = self._generate_rationale(description, product_family, extracted_attributes, missing_required)
+        rationale = self._generate_rationale(
+            description, product_family, extracted_attributes, missing_required, family_matched_rule
+        )
         
         # Collect all source tokens
         source_tokens = {
@@ -112,12 +141,14 @@ class ProductAnalyzer:
         return ProductAnalysis(
             product_type=product_type,
             product_family=product_family,
+            family_selection_confidence=family_selection_confidence,
+            family_matched_rule=family_matched_rule,
             extracted_attributes=extracted_attributes,
             missing_required_attributes=missing_required,
             suggested_chapters=suggested_chapters,
             analysis_confidence=analysis_confidence,
             rationale=rationale,
-            source_tokens=source_tokens
+            source_tokens=source_tokens,
         )
     
     async def _extract_attributes(
@@ -387,6 +418,38 @@ class ProductAnalyzer:
                     confidence=0.85
                 )
         
+        if product_family == ProductFamily.FASTENERS_HARDWARE:
+            for term, label in (
+                ("machine screw", "machine_screw"),
+                ("wood screw", "wood_screw"),
+                ("hex bolt", "hex_bolt"),
+                ("bolt", "bolt"),
+                ("screw", "screw"),
+                ("washer", "washer"),
+                ("nut", "nut"),
+                ("rivet", "rivet"),
+            ):
+                if term in description_lower:
+                    extracted["fastener_category"] = ExtractedAttribute(
+                        value=label,
+                        source_tokens=[term.split()[-1]],
+                        confidence=0.82,
+                    )
+                    break
+            for kw, val in (
+                ("stainless steel", "stainless_steel"),
+                ("steel", "steel"),
+                ("brass", "brass"),
+                ("aluminum", "aluminum"),
+            ):
+                if kw in description_lower:
+                    extracted["material"] = ExtractedAttribute(
+                        value=val,
+                        source_tokens=[kw.split()[0]],
+                        confidence=0.82,
+                    )
+                    break
+        
         return extracted
     
     def _suggest_chapters(
@@ -444,6 +507,9 @@ class ProductAnalyzer:
             material = extracted_attributes.get("material")
             if material and material.value == "wood":
                 suggestions.append({"chapter": 94, "confidence": 0.8, "reason": "Wooden furniture typically in Chapter 94"})
+        elif product_family == ProductFamily.FASTENERS_HARDWARE:
+            suggestions.append({"chapter": 73, "confidence": 0.82, "reason": "Steel threaded fasteners and washers commonly in Chapter 73"})
+            suggestions.append({"chapter": 83, "confidence": 0.75, "reason": "Miscellaneous base metal articles may fall in Chapter 83"})
         
         # Cap to max 3 chapters
         return suggestions[:3]
@@ -452,7 +518,9 @@ class ProductAnalyzer:
         self,
         extracted_attributes: Dict[str, ExtractedAttribute],
         required_attrs: List[str],
-        missing_required: List[str]
+        missing_required: List[str],
+        product_family: ProductFamily,
+        family_selection_confidence: float,
     ) -> float:
         """
         Compute overall analysis confidence.
@@ -460,36 +528,47 @@ class ProductAnalyzer:
         Derived from:
         - % of required attributes resolved
         - Strength of keyword evidence (individual attribute confidence)
+        - UNKNOWN family is never treated as full confidence (Patch C)
         """
+        keyword_evidence_strength = 0.0
+        if extracted_attributes:
+            confidences = [attr.confidence for attr in extracted_attributes.values()]
+            keyword_evidence_strength = sum(confidences) / len(confidences) if confidences else 0.0
+
         if not required_attrs:
-            return 1.0  # No requirements = full confidence
+            if product_family == ProductFamily.UNKNOWN:
+                # No mandatory attributes: still uncertain — blend extraction + router
+                base = 0.32 + 0.22 * float(family_selection_confidence or 0.0)
+                if extracted_attributes:
+                    base = min(0.62, base + 0.15 * keyword_evidence_strength)
+                return min(0.65, max(0.25, base))
+            return 1.0
         
         # Component 1: % of required attributes resolved
         found_count = len(required_attrs) - len(missing_required)
         attribute_coverage = found_count / len(required_attrs) if required_attrs else 1.0
         
-        # Component 2: Strength of keyword evidence (average confidence of extracted attributes)
-        keyword_evidence_strength = 0.0
-        if extracted_attributes:
-            confidences = [attr.confidence for attr in extracted_attributes.values()]
-            keyword_evidence_strength = sum(confidences) / len(confidences) if confidences else 0.0
-        
         # Weighted combination: 60% attribute coverage, 40% keyword evidence strength
         confidence = (attribute_coverage * 0.6) + (keyword_evidence_strength * 0.4)
-        
-        return min(1.0, max(0.0, confidence))
+        confidence = min(1.0, max(0.0, confidence))
+        if product_family == ProductFamily.UNKNOWN:
+            confidence = min(confidence, 0.62)
+        return confidence
     
     def _generate_rationale(
         self,
         description: str,
         product_family: ProductFamily,
         extracted_attributes: Dict[str, ExtractedAttribute],
-        missing_required: List[str]
+        missing_required: List[str],
+        family_matched_rule: str = "",
     ) -> str:
         """Generate human-readable rationale for the analysis."""
         parts = []
         
         parts.append(f"Product family identified as: {product_family.value}")
+        if family_matched_rule:
+            parts.append(f"Family router rule: {family_matched_rule}")
         
         if extracted_attributes:
             attr_summary = ", ".join([
@@ -530,6 +609,8 @@ class ProductAnalyzer:
             elif "container" in description_lower:
                 return "container"
             return "container"
+        elif product_family == ProductFamily.FASTENERS_HARDWARE:
+            return "fastener or hardware article"
         
         return product_family.value.replace("_", " ")
 
@@ -539,6 +620,8 @@ def serialize_analysis(analysis: ProductAnalysis) -> Dict[str, Any]:
     return {
         "product_type": analysis.product_type,
         "product_family": analysis.product_family.value,
+        "family_selection_confidence": getattr(analysis, "family_selection_confidence", 0.0),
+        "family_matched_rule": getattr(analysis, "family_matched_rule", ""),
         "extracted_attributes": {
             attr: {
                 "value": ext_attr.value,

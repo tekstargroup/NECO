@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "qa:static": "npm run lint && npm run build",
+    "qa:playwright:install": "playwright install chromium",
     "qa:ui": "playwright test",
     "qa:ui:headed": "playwright test --headed",
     "qa:ui:dev": "FRONTEND_BASE_URL=http://localhost:3000 node scripts/dev-auth-setup.mjs && FRONTEND_BASE_URL=http://localhost:3000 PLAYWRIGHT_STORAGE_STATE=.auth/dev-auth-state.json playwright test"

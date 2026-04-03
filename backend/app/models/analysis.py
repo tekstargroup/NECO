@@ -80,6 +80,11 @@ class Analysis(Base):
     # Relationships
     shipment = relationship("Shipment", back_populates="analyses")
     review_record = relationship("ReviewRecord", backref="analyses")
+    item_classification_facts = relationship(
+        "ShipmentItemClassificationFacts",
+        back_populates="analysis",
+        cascade="all, delete-orphan",
+    )
     
     def __repr__(self):
         return f"<Analysis {self.id} ({self.status.value})>"

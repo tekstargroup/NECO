@@ -182,9 +182,10 @@ export function DocumentsTab({ shipment, shipmentId, onRunPreComplianceAnalysis 
         items?: Array<{ item_id?: string; assigned_document_ids?: string[] }>
       }>(`/api/v1/shipments/${shipmentId}/trust-workflow`)
       setTrustWorkflow(tw)
+      setLoadWarnings((prev) => prev.filter((w) => w !== "workflow"))
     } catch {
       setTrustWorkflow(null)
-      setLoadWarnings(prev => prev.includes("workflow") ? prev : [...prev, "workflow"])
+      setLoadWarnings((prev) => (prev.includes("workflow") ? prev : [...prev, "workflow"]))
     }
   }
 
@@ -211,9 +212,18 @@ export function DocumentsTab({ shipment, shipmentId, onRunPreComplianceAnalysis 
         if (item?.id) cooByItem[String(item.id)] = String(item.country_of_origin || "")
       })
       setCountryOfOriginInput((prev) => ({ ...cooByItem, ...prev }))
-    } catch {
+      setLoadWarnings((prev) => prev.filter((w) => w !== "analysis"))
+    } catch (e: unknown) {
+      const err = e as ApiClientError
+      const detail = typeof err.data?.detail === "string" ? err.data.detail : ""
+      // Backend returns 404 until the first analysis run exists — expected, not an error state for this tab.
+      if (err.status === 404 && detail.toLowerCase().includes("analysis not found")) {
+        setAnalysisItems([])
+        setLoadWarnings((prev) => prev.filter((w) => w !== "analysis"))
+        return
+      }
       setAnalysisItems([])
-      setLoadWarnings(prev => prev.includes("analysis") ? prev : [...prev, "analysis"])
+      setLoadWarnings((prev) => (prev.includes("analysis") ? prev : [...prev, "analysis"]))
     }
   }
 
@@ -221,9 +231,10 @@ export function DocumentsTab({ shipment, shipmentId, onRunPreComplianceAnalysis 
     try {
       const detail = await apiGet<any>(`/api/v1/shipments/${shipmentId}`)
       setShipmentItems(detail?.items || [])
+      setLoadWarnings((prev) => prev.filter((w) => w !== "items"))
     } catch {
       setShipmentItems([])
-      setLoadWarnings(prev => prev.includes("items") ? prev : [...prev, "items"])
+      setLoadWarnings((prev) => (prev.includes("items") ? prev : [...prev, "items"]))
     }
   }
 

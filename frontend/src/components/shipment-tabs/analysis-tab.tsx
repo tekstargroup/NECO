@@ -16,6 +16,7 @@ import { WarningBox } from "@/components/ui/warning-box"
 import { useApiClient, ApiClientError, formatApiError } from "@/lib/api-client-client"
 import { AnalysisProgressTracker } from "@/components/analysis-progress-tracker"
 import { RecommendationDetailDrawer } from "@/components/recommendation-detail-drawer"
+import { GroundedChatBar } from "@/components/grounded-chat-bar"
 
 /** Minimum time the analysis progress UI runs before showing results (trust / perceived work). */
 const MIN_ANALYSIS_PROGRESS_MS = 10_000
@@ -650,6 +651,10 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
             onSwitchToExports={onSwitchToExports}
             derivedReviewState={derivedReviewState}
             domainReadiness={domainReadiness}
+          />
+          <GroundedChatBar
+            shipmentId={shipmentId}
+            items={analysisStatus.result_json?.items || []}
           />
         </div>
       )}
@@ -1463,7 +1468,11 @@ function AnalysisResultsView({
       )}
 
       {/* Import summary (when available) */}
-      {resultJson?.import_summary && (resultJson.import_summary.imported > 0 || resultJson.import_summary.merged > 0 || resultJson.import_summary.conflicts?.length > 0) && (
+      {resultJson?.import_summary &&
+        (resultJson.import_summary.imported > 0 ||
+          resultJson.import_summary.merged > 0 ||
+          (resultJson.import_summary.conflicts?.length ?? 0) > 0 ||
+          (resultJson.import_summary.provenance_skipped?.length ?? 0) > 0) && (
         <div className="rounded-md border border-blue-200 bg-blue-50/60 px-4 py-2.5 text-xs text-blue-900">
           <strong>Import results:</strong>{" "}
           {resultJson.import_summary.imported > 0 && <span>{resultJson.import_summary.imported} added</span>}
@@ -1471,6 +1480,13 @@ function AnalysisResultsView({
           {resultJson.import_summary.skipped > 0 && <span>, {resultJson.import_summary.skipped} unchanged</span>}
           {resultJson.import_summary.conflicts?.length > 0 && (
             <span className="text-amber-700 font-medium">, {resultJson.import_summary.conflicts.length} conflict{resultJson.import_summary.conflicts.length !== 1 ? "s" : ""}</span>
+          )}
+          {(resultJson.import_summary.provenance_skipped?.length ?? 0) > 0 && (
+            <span className="text-amber-700 font-medium">
+              {(resultJson.import_summary.imported > 0 || resultJson.import_summary.merged > 0 || (resultJson.import_summary.conflicts?.length ?? 0) > 0) ? ", " : ""}
+              {resultJson.import_summary.provenance_skipped.length} line
+              {resultJson.import_summary.provenance_skipped.length !== 1 ? "s" : ""} with no line provenance (HTS mismatch — document line not merged)
+            </span>
           )}
           {resultJson.import_summary.conflicts?.length > 0 && (
             <details className="mt-1">
@@ -1480,6 +1496,18 @@ function AnalysisResultsView({
                   <li key={ci}>
                     <span className="font-mono">{c.existing_hts}</span> (existing: {c.existing_label}) vs{" "}
                     <span className="font-mono">{c.incoming_hts}</span> (incoming: {c.incoming_label}) — {c.reason}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {(resultJson.import_summary.provenance_skipped?.length ?? 0) > 0 && (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-amber-700">Why some lines have no provenance</summary>
+              <ul className="mt-1 space-y-0.5 text-[11px]">
+                {resultJson.import_summary.provenance_skipped.map((p: { line_num: number; reason: string }, pi: number) => (
+                  <li key={pi}>
+                    Line <span className="font-mono">{p.line_num}</span> — {p.reason === "hts_conflict" ? "HTS conflict: incoming line could not be merged with an existing item, so structured line provenance was not attached." : p.reason}
                   </li>
                 ))}
               </ul>

@@ -1,6 +1,10 @@
 # Phase 6 — Pre-launch smoke checklist and user test script
 
+**Master copy (Phase 6 + pre-flight + QA harness inventory + implementation list):** [PHASE6_MANUAL_TESTING_AND_QA_HARNESS.md](./PHASE6_MANUAL_TESTING_AND_QA_HARNESS.md). **PDF:** run `python scripts/generate_phase6_qa_pdf.py` → `output/PHASE6_QA_Harness_NECO.pdf`.
+
 Run **6A smoke** before external user sessions. Use **6B** during sessions. If you hit a P0 trust break, stop and fix before continuing.
+
+**Local dev-login prerequisite:** With `NEXT_PUBLIC_DEV_AUTH=true`, `NEXT_PUBLIC_API_URL` must point at your running API (see `frontend/.env.example`). Backend `ENVIRONMENT` must be `development`, `dev`, or `local` so `/api/v1/auth/dev-token` exists. Seed the Sprint 12 dev user/org (`./scripts/sprint12_loop.sh` with Docker, or `backend/scripts/seed_sprint12_dev_login.py`) or authenticated calls after login will return 403.
 
 ## 6A — Trust-focused smoke pass (operators)
 

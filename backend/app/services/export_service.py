@@ -28,7 +28,7 @@ from app.models.regulatory_evaluation import RegulatoryEvaluation, RegulatoryCon
 from app.models.export import Export, ExportType, ExportStatus
 from app.models.shipment import Shipment
 from app.services.s3_upload_service import get_s3_client
-from app.services.shipment_analysis_service import stable_classification_outcome
+from app.services.classification_memo import stable_classification_outcome
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

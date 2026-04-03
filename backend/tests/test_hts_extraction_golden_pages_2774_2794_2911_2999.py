@@ -23,7 +23,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import select
-from app.core.database import async_session_maker
 from app.models.hts_node import HTSNode
 from scripts.duty_resolution import resolve_duty, ResolvedDuty
 
@@ -151,12 +150,6 @@ DESCRIPTION_ASSERTIONS = {
     2911: {},
     2999: {},
 }
-
-
-@pytest.fixture
-def db_session():
-    """Database session fixture."""
-    return async_session_maker()
 
 
 @pytest.mark.asyncio

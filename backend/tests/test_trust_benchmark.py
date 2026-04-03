@@ -17,8 +17,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+from app.services.classification_memo import build_classification_memo
 from app.services.shipment_analysis_service import (
-    build_classification_memo,
     _get_hts_if_supported,
     _get_hts_from_classification,
     _build_item_evidence_used,

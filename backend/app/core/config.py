@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     # - shadow: compute rule assessment but do not alter candidate ranking
     # - enforce: compute + apply heading bias to candidate ranking
     CLASSIFICATION_RULE_MODE: str = "enforce"
+    # PATCH A: When True, memo support_level follows engine status; lexical similarity is diagnostic only (not a trust gate).
+    CLASSIFICATION_MEMO_STRICT_STATUS_ALIGNMENT: bool = False
+    # PATCH B: When True, write ShipmentItemLineProvenance for user table selection when source doc id is sent.
+    PROVENANCE_ON_SELECTION_LINE_ITEMS: bool = True
+    # PATCH B: When True, POST /shipments/{id}/items honors provenance_document_id + provenance_line_index.
+    PROVENANCE_ON_MANUAL_ITEM_PROVENANCE: bool = False
+    # PATCH C: Central family router for critical clarification attributes (replaces inline heuristics only when True).
+    CLASSIFICATION_FAMILY_ROUTER_ENABLED: bool = False
+    CLASSIFICATION_FAMILY_ROUTER_VERSION: str = "1"
     
     # Anthropic API
     ANTHROPIC_API_KEY: str

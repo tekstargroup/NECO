@@ -118,17 +118,15 @@ async def test_applied_priors_logged_for_audio(db_session):
 
 def test_subheading_priors_framework_no_hardcoded_codes():
     """Verify subheading priors framework exists and doesn't hardcode HTS codes in engine."""
-    # This is a code inspection test - verify subheading_priors.py exists
-    # and engine.py uses the framework, not hardcoded logic
-    
-    import os
-    framework_path = "backend/app/engines/classification/subheading_priors.py"
-    assert os.path.exists(framework_path), "subheading_priors.py framework must exist"
-    
-    # Read engine.py and verify it imports/uses the framework
-    engine_path = "backend/app/engines/classification/engine.py"
-    with open(engine_path, 'r') as f:
-        engine_content = f.read()
+    # Paths relative to backend/ (pytest cwd), not repo root.
+    from pathlib import Path
+
+    backend_root = Path(__file__).resolve().parent.parent
+    framework_path = backend_root / "app/engines/classification/subheading_priors.py"
+    assert framework_path.is_file(), "subheading_priors.py framework must exist"
+
+    engine_path = backend_root / "app/engines/classification/engine.py"
+    engine_content = engine_path.read_text(encoding="utf-8")
     
     # Should import from subheading_priors
     assert "from app.engines.classification.subheading_priors import" in engine_content or \

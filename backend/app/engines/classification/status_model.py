@@ -3,21 +3,48 @@ Status Model - Finalized Output States (Workstream E)
 
 Defines exactly 4 status states with strict semantics.
 No ambiguity allowed.
+
+PATCH A — Memo layer: `ClassificationStatus` is authoritative for trust. Lexical / pg_trgm
+`similarity_score` on candidates ranks retrieval only; it must not override SUCCESS/REVIEW_REQUIRED
+when `CLASSIFICATION_MEMO_STRICT_STATUS_ALIGNMENT` is enabled in `build_classification_memo`.
 """
 from enum import Enum
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List
 
 
 class ClassificationStatus(str, Enum):
     """
     Finalized status model with strict definitions.
-    
+
     Every classification result must fall into exactly one of these states.
     """
     CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
     NO_CONFIDENT_MATCH = "NO_CONFIDENT_MATCH"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
     SUCCESS = "SUCCESS"
+
+
+# Minimum combined candidate score and analysis confidence for unattended SUCCESS.
+# Lexical similarity (pg_trgm) is not used here — it only ranks retrieval.
+MIN_TOP_CANDIDATE_SCORE_FOR_SUCCESS = 0.20
+MIN_ANALYSIS_CONFIDENCE_FOR_SUCCESS = 0.7
+
+
+def competitive_ambiguity_requires_review(
+    final_candidates: List[Dict[str, Any]],
+    *,
+    score_gap: float = 0.08,
+) -> bool:
+    """
+    True when the top two candidates are close in combined score (unresolved ambiguity).
+
+    Similarity_score / pg_trgm is not consulted — only final_score (candidate quality).
+    """
+    if len(final_candidates) < 2:
+        return False
+    s0 = float(final_candidates[0].get("final_score", 0.0))
+    s1 = float(final_candidates[1].get("final_score", 0.0))
+    return (s0 - s1) <= score_gap
 
 
 # Status definitions and criteria
@@ -36,50 +63,48 @@ STATUS_DEFINITIONS: Dict[ClassificationStatus, Dict[str, Any]] = {
         },
         "next_action": "User must provide clarification responses"
     },
-    
+
     ClassificationStatus.NO_CONFIDENT_MATCH: {
-        "description": "Best similarity score is below confidence threshold. No confident match available.",
+        "description": "No usable HTS candidates were produced from the current inputs (retrieval/scoring empty).",
         "criteria": [
-            "best_similarity < 0.18",
-            "Classification was attempted",
-            "Candidates were scored but none meet confidence threshold"
+            "No candidates after filtering/scoring",
+            "Not driven by low lexical similarity when candidates exist"
         ],
         "response": {
-            "candidates": "Top 5 candidates as 'untrusted' for human review",
-            "best_similarity": "Best similarity score",
-            "threshold_used": "0.18"
+            "candidates": "Usually empty; if present, context-only",
+            "note": "Empty candidate set vs. review when alternatives exist"
         },
-        "next_action": "Human review required - candidates are untrusted"
+        "next_action": "Improve inputs or document extraction"
     },
-    
+
     ClassificationStatus.REVIEW_REQUIRED: {
         "description": "Ambiguity remains but candidates are plausible. Human review recommended.",
         "criteria": [
-            "best_similarity >= 0.18 but < 0.25",
-            "OR multiple candidates with similar scores",
-            "OR analysis_confidence < 0.7",
-            "Classification was attempted and candidates exist"
+            "Fact completeness below bar (analysis_confidence < 0.7), or",
+            "Candidate quality below SUCCESS bar (top combined score), or",
+            "Competitive top candidates (close final scores), or",
+            "Family/product-line ambiguity (e.g. multiple plausible subheadings)"
         ],
         "response": {
             "candidates": "Top candidates with scores",
-            "best_similarity": "Best similarity score",
             "ambiguity_reason": "Why review is required"
         },
         "next_action": "Human review recommended before final classification"
     },
-    
+
     ClassificationStatus.SUCCESS: {
-        "description": "Confident classification with resolved attributes and high-quality candidates.",
+        "description": "Confident classification with resolved attributes and strong candidate quality.",
         "criteria": [
             "All required attributes are resolved (missing_required_attributes is empty)",
-            "best_similarity >= 0.25",
-            "top_candidate_score >= 0.20",
-            "analysis_confidence >= 0.7"
+            "top_candidate_score >= 0.20 (combined score, not lexical similarity)",
+            "analysis_confidence >= 0.7",
+            "No competitive ambiguity between top candidates",
+            "Candidates exist"
         ],
         "response": {
             "candidates": "Top candidates with full scores",
             "top_candidate_hts": "Recommended HTS code",
-            "top_candidate_score": "Top candidate score"
+            "top_candidate_score": "Top candidate combined score"
         },
         "next_action": "Classification complete - candidates can be persisted"
     }
@@ -88,63 +113,43 @@ STATUS_DEFINITIONS: Dict[ClassificationStatus, Dict[str, Any]] = {
 
 def determine_status(
     missing_required_attributes: List[str],
-    best_similarity: float,
     top_candidate_score: float,
     analysis_confidence: float,
-    candidates_exist: bool
+    candidates_exist: bool,
+    *,
+    ambiguity_requires_review: bool = False,
 ) -> ClassificationStatus:
     """
-    Determine classification status based on strict criteria.
-    
+    Determine classification status from fact completeness, candidate quality, and ambiguity.
+
+    Lexical similarity to tariff text is intentionally not a gate — use it for ranking only.
+
     Args:
-        missing_required_attributes: List of missing required attributes
-        best_similarity: Best similarity score from candidates
-        top_candidate_score: Top candidate final score
-        analysis_confidence: Product analysis confidence
-        candidates_exist: Whether any candidates were found
-    
+        missing_required_attributes: Missing required attributes (blocks all outcomes except CLARIFICATION).
+        top_candidate_score: Top candidate combined (final) score.
+        analysis_confidence: Product analysis confidence (fact completeness proxy).
+        candidates_exist: Whether any scored candidates exist.
+        ambiguity_requires_review: Unresolved ambiguity (e.g. competitive top scores).
+
     Returns:
         ClassificationStatus
     """
-    # CLARIFICATION_REQUIRED: Missing required attributes
     if missing_required_attributes:
         return ClassificationStatus.CLARIFICATION_REQUIRED
-    
-    # NO_CONFIDENT_MATCH: Best similarity below threshold
-    if best_similarity < 0.18:
+
+    if not candidates_exist:
         return ClassificationStatus.NO_CONFIDENT_MATCH
-    
-    # REVIEW_REQUIRED: Ambiguity but plausible candidates
-    # Conditions:
-    # 1. Attributes are resolved (already checked above)
-    # 2. Candidates are plausible (best_similarity >= 0.18)
-    # 3. Confidence is mid-range (best_similarity < 0.25 OR analysis_confidence < 0.7)
-    # 4. But not high enough for SUCCESS
-    
-    # Check if we meet SUCCESS criteria first
+
     meets_success_criteria = (
-        best_similarity >= 0.25 and 
-        top_candidate_score >= 0.20 and 
-        analysis_confidence >= 0.7 and
-        candidates_exist
+        top_candidate_score >= MIN_TOP_CANDIDATE_SCORE_FOR_SUCCESS
+        and analysis_confidence >= MIN_ANALYSIS_CONFIDENCE_FOR_SUCCESS
+        and not ambiguity_requires_review
     )
-    
+
     if meets_success_criteria:
         return ClassificationStatus.SUCCESS
-    
-    # If not SUCCESS, check for REVIEW_REQUIRED
-    # REVIEW_REQUIRED: Attributes resolved, similarity >= 0.18, but either:
-    # - Similarity is mid-range (0.18 <= similarity < 0.25), OR
-    # - Analysis confidence is low (< 0.7)
-    if best_similarity >= 0.18:
-        if best_similarity < 0.25 or analysis_confidence < 0.7:
-            return ClassificationStatus.REVIEW_REQUIRED
-    
-    # Default fallback
-    if candidates_exist:
-        return ClassificationStatus.REVIEW_REQUIRED
-    else:
-        return ClassificationStatus.NO_CONFIDENT_MATCH
+
+    return ClassificationStatus.REVIEW_REQUIRED
 
 
 def get_status_definition(status: ClassificationStatus) -> Dict[str, Any]:

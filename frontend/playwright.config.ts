@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Default 3001 matches frontend/README quick start; `next dev` is often 3000 — set FRONTEND_BASE_URL.
 const frontendBaseUrl = process.env.FRONTEND_BASE_URL || "http://localhost:3001";
 const storageState = process.env.PLAYWRIGHT_STORAGE_STATE || ".auth/clerk-state.json";
 

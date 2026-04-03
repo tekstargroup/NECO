@@ -23,10 +23,7 @@ from app.engines.classification.rule_based_classifier import (
     RuleBasedClassifier,
     ProductInput,
 )
-from app.services.shipment_analysis_service import (
-    build_classification_memo,
-    stable_classification_outcome,
-)
+from app.services.classification_memo import build_classification_memo, stable_classification_outcome
 from app.services.analysis_pipeline import build_analysis_provenance
 
 GOLD_SET_PATH = Path(__file__).parent / "tests" / "benchmark" / "classification_gold_set.json"

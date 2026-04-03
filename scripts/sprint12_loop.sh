@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Seeds via Docker Postgres by default. For host Postgres (no docker exec), use:
+#   cd backend && python scripts/seed_sprint12_dev_login.py
 
 set -euo pipefail
 

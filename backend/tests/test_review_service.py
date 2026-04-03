@@ -10,7 +10,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 from datetime import datetime
 
@@ -71,8 +71,8 @@ def classification_snapshot():
 @pytest.mark.asyncio
 async def test_create_review_record(review_service, classification_snapshot):
     """Test creating a review record."""
-    # Mock the add and flush
-    review_service.db.add = AsyncMock()
+    # SQLAlchemy Session.add is synchronous; AsyncMock would warn if never awaited
+    review_service.db.add = MagicMock()
     
     record = await review_service.create_review_record(
         object_type=ReviewableObjectType.CLASSIFICATION,
@@ -231,7 +231,7 @@ async def test_only_reviewer_can_finalize(review_service, mock_db):
         await review_service.transition_status(
             review_id=record.id,
             new_status=ReviewStatus.REVIEWED_ACCEPTED,
-            reviewed_by="analyst_1",
+            reviewed_by="reviewer_bob",  # Not the submitter; role is still wrong
             user_role=UserRole.ANALYST.value,  # Not REVIEWER
             reason_code=ReviewReasonCode.ACCEPTED_AS_IS
         )

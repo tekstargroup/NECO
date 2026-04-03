@@ -147,9 +147,16 @@ MEDICAL_DEVICES_MAP = {
     "primary_chapters": ["90"]
 }
 
+ELECTRONICS_COMPUTING_MAP = {
+    "required_attributes": CONSUMER_ELECTRONICS_MAP["required_attributes"],
+    "product_family": ProductFamily.ELECTRONICS_COMPUTING,
+    "primary_chapters": ["84", "85"],
+}
+
 # Map product families to their attribute maps
 PRODUCT_FAMILY_MAPS: Dict[ProductFamily, Dict[str, Any]] = {
     ProductFamily.CONSUMER_ELECTRONICS: CONSUMER_ELECTRONICS_MAP,
+    ProductFamily.ELECTRONICS_COMPUTING: ELECTRONICS_COMPUTING_MAP,
     ProductFamily.NETWORKING_EQUIPMENT: NETWORKING_EQUIPMENT_MAP,
     ProductFamily.POWER_SUPPLIES: POWER_SUPPLIES_MAP,
     ProductFamily.MEDICAL_DEVICES: MEDICAL_DEVICES_MAP,

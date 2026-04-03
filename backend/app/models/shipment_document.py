@@ -81,6 +81,11 @@ class ShipmentDocument(Base):
     # Relationships
     shipment = relationship("Shipment", back_populates="documents")
     item_links = relationship("ShipmentItemDocument", back_populates="document")
+    item_line_provenance = relationship(
+        "ShipmentItemLineProvenance",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
     
     # Immutable: no update/delete of blob (soft delete via status if needed later)
     __table_args__ = (

@@ -25,11 +25,14 @@ from app.models.organization import Organization
 from app.models.shipment import Shipment, ShipmentStatus, ShipmentReference, ShipmentItem
 from app.models.shipment_document import ShipmentDocument
 from app.models.shipment_item_document import ShipmentItemDocument, ItemDocumentMappingStatus
+from app.models.shipment_item_line_provenance import ShipmentItemLineProvenance
+from app.services.shipment_analysis_service import ShipmentAnalysisService
 from app.models.analysis import Analysis
 from app.models.review_record import ReviewRecord
 from app.repositories.org_scoped_repository import OrgScopedRepository
 from app.services.entitlement_service import EntitlementService
 from app.services.shipment_eligibility_service import ShipmentEligibilityService
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -430,6 +433,10 @@ class LineItemsFromSelectionRequest(BaseModel):
     """Request to create shipment line items from user-selected rows (when auto-extraction found none)."""
     items: List[LineItemFromSelectionRow] = Field(..., min_length=1)
     replace_items: bool = Field(False, description="If true, delete existing items first and replace with new selection")
+    source_shipment_document_id: Optional[UUID] = Field(
+        None,
+        description="PATCH B: When set, provenance rows link each new line to this document's table row index.",
+    )
 
 
 @router.post("/{shipment_id}/line-items-from-selection", status_code=status.HTTP_201_CREATED)
@@ -456,6 +463,7 @@ async def create_line_items_from_selection(
         for item in list(shipment.items):
             await db.delete(item)
         await db.flush()
+    created_items: List[ShipmentItem] = []
     for i, row in enumerate(body.items):
         label = (row.description or "").strip() or f"Line {i + 1}"
         if not label or len(label) > 255:
@@ -478,6 +486,18 @@ async def create_line_items_from_selection(
             country_of_origin=coo,
         )
         db.add(item)
+        created_items.append(item)
+    await db.flush()
+    if (
+        getattr(settings, "PROVENANCE_ON_SELECTION_LINE_ITEMS", True)
+        and body.source_shipment_document_id
+        and created_items
+    ):
+        from app.services.shipment_item_provenance_service import ensure_provenance_user_selection_from_table
+
+        await ensure_provenance_user_selection_from_table(
+            db, shipment, created_items, body.source_shipment_document_id
+        )
     await db.commit()
     return {"created": len(body.items), "message": "Line items added. Re-run analysis to use them."}
 
@@ -706,6 +726,37 @@ async def clear_supplemental_evidence(
     return {"item_id": str(item.id), "message": "Supplemental evidence cleared."}
 
 
+@router.get("/{shipment_id}/items/{item_id}/line-provenance")
+async def get_item_line_provenance(
+    shipment_id: UUID,
+    item_id: UUID,
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Internal/debug: authoritative structured-import lineage (CI/ES line index and document).
+    Same payload shape as `line_provenance` on analysis `items[]`.
+    """
+    repo = OrgScopedRepository(db, Shipment)
+    shipment = await repo.get_by_id(shipment_id, current_org.id)
+    await db.refresh(shipment, ["documents", "items"])
+
+    if not any(i.id == item_id for i in (shipment.items or [])):
+        raise HTTPException(status_code=404, detail="Line item not found")
+
+    result = await db.execute(
+        select(ShipmentItemLineProvenance).where(ShipmentItemLineProvenance.shipment_item_id == item_id)
+    )
+    rows = list(result.scalars().all())
+    svc = ShipmentAnalysisService(db)
+    return {
+        "shipment_id": str(shipment_id),
+        "item_id": str(item_id),
+        "line_provenance": svc._line_provenance_api_rows(rows, shipment.documents or []),
+    }
+
+
 @router.post("/{shipment_id}/items", status_code=status.HTTP_201_CREATED)
 async def add_shipment_item(
     shipment_id: UUID,
@@ -732,6 +783,21 @@ async def add_shipment_item(
         country_of_origin=item_data.get("country_of_origin")
     )
     db.add(item)
+    await db.flush()
+    if getattr(settings, "PROVENANCE_ON_MANUAL_ITEM_PROVENANCE", False):
+        raw_pd = item_data.get("provenance_document_id") or item_data.get("provenance_shipment_document_id")
+        raw_li = item_data.get("provenance_line_index")
+        if raw_pd is not None and raw_li is not None:
+            try:
+                pd = UUID(str(raw_pd))
+                pli = int(raw_li)
+            except (ValueError, TypeError):
+                pd = None
+                pli = None
+            if pd is not None and pli is not None:
+                from app.services.shipment_item_provenance_service import ensure_provenance_manual_api
+
+                await ensure_provenance_manual_api(db, shipment, item, shipment_document_id=pd, line_index=pli)
     await db.commit()
     await db.refresh(item)
     
@@ -971,6 +1037,54 @@ async def get_analysis_status(
     )
     
     return result
+
+
+class GroundedChatRequest(BaseModel):
+    """Patch F — cite-or-refuse chat grounded in stored analysis only."""
+
+    message: str = Field(..., min_length=1, max_length=4000)
+    shipment_item_id: Optional[UUID] = Field(
+        default=None,
+        description="Optional line item; defaults to first line when omitted.",
+    )
+
+
+@router.post("/{shipment_id}/grounded-chat")
+async def post_grounded_classification_chat(
+    shipment_id: UUID,
+    body: GroundedChatRequest,
+    current_user: User = Depends(get_current_user_sprint12),
+    current_org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Answer from facts, heading trace, evidence, and classification output only (no web / no free-form LLM).
+    """
+    from app.services.analysis_orchestration_service import AnalysisOrchestrationService
+    from app.services.grounded_classification_chat_service import build_grounded_answer
+
+    repo = OrgScopedRepository(db, Shipment)
+    await repo.get_by_id(shipment_id, current_org.id)
+
+    orchestration = AnalysisOrchestrationService(db)
+    try:
+        status_payload = await orchestration.get_analysis_status(
+            shipment_id=shipment_id,
+            organization_id=current_org.id,
+        )
+    except HTTPException:
+        raise
+    result_json = status_payload.get("result_json")
+    if not result_json or not isinstance(result_json, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No completed analysis result available for this shipment. Run analysis first.",
+        )
+    return build_grounded_answer(
+        result_json,
+        body.message,
+        shipment_item_id=body.shipment_item_id,
+    )
 
 
 @router.get("/{shipment_id}/trust-workflow")

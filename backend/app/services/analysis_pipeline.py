@@ -139,11 +139,14 @@ async def execute_shipment_analysis_pipeline(
     await db.commit()
 
     analysis_service = ShipmentAnalysisService(db)
+    # analysis.id is the PK of the latest Analysis row for this shipment (this run). New runs get a new row/UUID;
+    # idempotent start_analysis can return an in-flight analysis without starting a second pipeline.
     result_json, review_snapshot, blockers = await analysis_service.run_full_shipment_analysis(
         shipment_id=shipment_id,
         organization_id=organization_id,
         actor_user_id=actor_user_id,
         clarification_responses=clarification_responses,
+        analysis_id=analysis.id,
     )
 
     pipeline_mode = (result_json or {}).get("mode")

@@ -18,8 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.classification.context_builder import ClassificationContextBuilder
 from app.engines.classification.product_analysis import ProductAnalyzer, serialize_analysis
-from app.engines.classification.required_attributes import get_question_for_attribute, ProductFamily
-from app.engines.classification.status_model import ClassificationStatus, determine_status
+from app.engines.classification.required_attributes import get_question_for_family_attribute, ProductFamily
+from app.engines.classification.status_model import (
+    MIN_TOP_CANDIDATE_SCORE_FOR_SUCCESS,
+    ClassificationStatus,
+    competitive_ambiguity_requires_review,
+    determine_status,
+)
 from app.engines.classification.synonym_expansion import expand_query_terms
 
 logger = logging.getLogger(__name__)
@@ -29,6 +34,35 @@ TRACE_HTS_CODE = os.getenv("TRACE_HTS_CODE", "").strip()
 
 # Non-MFN countries (small list for now)
 NON_MFN_COUNTRIES = {"KP", "CU"}  # North Korea, Cuba
+
+
+def _review_ambiguity_notes(
+    final_candidates: List[Dict[str, Any]],
+    top_candidate_score: float,
+    analysis_confidence: float,
+    reason_code: Optional[str],
+) -> List[str]:
+    """Structured notes for REVIEW_REQUIRED (no lexical-similarity threshold framing)."""
+    notes: List[str] = []
+    if competitive_ambiguity_requires_review(final_candidates):
+        notes.append(
+            "Top candidates have close combined scores; human selection is recommended."
+        )
+    if analysis_confidence < 0.7:
+        notes.append(
+            f"Product analysis confidence ({analysis_confidence:.2f}) is below the level "
+            "used for unattended classification (0.70)."
+        )
+    if top_candidate_score < MIN_TOP_CANDIDATE_SCORE_FOR_SUCCESS:
+        notes.append(
+            f"Top candidate combined score ({top_candidate_score:.3f}) is below the level "
+            f"used for unattended classification ({MIN_TOP_CANDIDATE_SCORE_FOR_SUCCESS:.2f})."
+        )
+    if reason_code == "FAMILY_AWARE_GATE_8518":
+        notes.append(
+            "Multiple plausible 8518 subheadings; confirm primary function and intended tariff line."
+        )
+    return notes
 
 
 class ClassificationEngine:
@@ -173,7 +207,7 @@ class ClassificationEngine:
                 # Build questions list - MUST be non-empty when missing_required is non-empty
                 questions = []
                 for attr in missing_attrs:
-                    question_text = get_question_for_attribute(attr)
+                    question_text = get_question_for_family_attribute(product_analysis.product_family, attr)
                     question_obj = {
                         "attribute": attr,
                         "question": question_text
@@ -198,7 +232,7 @@ class ClassificationEngine:
                     questions = [
                         {
                             "attribute": attr,
-                            "question": get_question_for_attribute(attr)
+                            "question": get_question_for_family_attribute(product_analysis.product_family, attr)
                         }
                         for attr in missing_required[:3]
                     ]
@@ -220,7 +254,7 @@ class ClassificationEngine:
                         if not any(q["attribute"] == attr for q in questions):
                             questions.append({
                                 "attribute": attr,
-                                "question": get_question_for_attribute(attr)
+                                "question": get_question_for_family_attribute(product_analysis.product_family, attr)
                             })
                 
                 # Workstream 4.2-C: Final invariant validation before return
@@ -436,49 +470,55 @@ class ClassificationEngine:
             best_similarity = max([c.get("similarity_score", 0.0) for c in final_candidates]) if final_candidates else 0.0
             top_score = final_candidates[0]["final_score"] if final_candidates else 0.0
             
-            # STEP 2: Family-aware similarity gating for audio_devices (after clarification)
+            # Audio 8518: informational similarity (retrieval support only)
             best_8518_similarity = 0.0
             product_family_str = product_analysis.product_family.value if isinstance(product_analysis.product_family, ProductFamily) else (product_analysis.product_family if product_analysis.product_family else None)
-            if product_family_str == "audio_devices" and clarification_responses:
-                # After clarification, check if any 8518 candidates exist
-                candidates_8518 = [c for c in final_candidates if c.get("hts_code", "").startswith("8518")]
-                if candidates_8518:
-                    best_8518_similarity = max([c.get("similarity_score", 0.0) for c in candidates_8518])
-                    logger.info(
-                        f"Family-aware gating: audio_devices with clarification, "
-                        f"best_8518_similarity={best_8518_similarity:.6f}, "
-                        f"8518_count={len(candidates_8518)}"
-                    )
-            
-            # STEP 2: Gate A - Family-aware status determination
+            candidates_8518 = [c for c in final_candidates if c.get("hts_code", "").startswith("8518")]
+            if product_family_str == "audio_devices" and clarification_responses and candidates_8518:
+                best_8518_similarity = max([c.get("similarity_score", 0.0) for c in candidates_8518])
+                logger.info(
+                    f"Family-aware context: audio_devices with clarification, "
+                    f"best_8518_similarity={best_8518_similarity:.6f} (informational), "
+                    f"8518_count={len(candidates_8518)}"
+                )
+
+            # Gate A — multiple distinct 8518 subheadings after clarification = unresolved ambiguity (not lexical thresholds)
             status = None
             reason_code = None
-            if product_family_str == "audio_devices" and clarification_responses and best_8518_similarity >= 0.16:
-                # Gate A: If audio_devices with clarification and best_8518_similarity >= 0.16, use REVIEW_REQUIRED
+            subheadings_8518 = set()
+            for c in candidates_8518:
+                code = c.get("hts_code", "") or ""
+                if len(code) >= 6:
+                    subheadings_8518.add(code[:6])
+            if (
+                product_family_str == "audio_devices"
+                and clarification_responses
+                and len(candidates_8518) >= 2
+                and len(subheadings_8518) > 1
+            ):
                 status = ClassificationStatus.REVIEW_REQUIRED
                 reason_code = "FAMILY_AWARE_GATE_8518"
                 logger.info(
-                    f"Family-aware gate PASSED: audio_devices with clarification, "
-                    f"best_8518_similarity={best_8518_similarity:.6f} >= 0.16, "
-                    f"status=REVIEW_REQUIRED (not NO_CONFIDENT_MATCH)"
+                    "Family-aware gate: multiple 8518 subheadings present — "
+                    f"subheadings={sorted(subheadings_8518)}, status=REVIEW_REQUIRED"
                 )
             else:
-                # Determine status using standard criteria
+                ambiguity = competitive_ambiguity_requires_review(final_candidates)
                 status = determine_status(
                     missing_required_attributes=product_analysis.missing_required_attributes,
-                    best_similarity=best_similarity,
                     top_candidate_score=top_score,
                     analysis_confidence=product_analysis.analysis_confidence,
-                    candidates_exist=len(final_candidates) > 0
+                    candidates_exist=len(final_candidates) > 0,
+                    ambiguity_requires_review=ambiguity,
                 )
-                reason_code = "STANDARD_GATE" if status != ClassificationStatus.NO_CONFIDENT_MATCH else "LOW_SIMILARITY_GATE"
+                reason_code = "STANDARD_GATE" if status != ClassificationStatus.NO_CONFIDENT_MATCH else "NO_CANDIDATES_GATE"
             
-            # Handle NO_CONFIDENT_MATCH
+            # Handle NO_CONFIDENT_MATCH (only when no scored candidates — not low lexical similarity alone)
             if status == ClassificationStatus.NO_CONFIDENT_MATCH:
                 processing_time_ms = int((time.time() - start_time) * 1000)
                 logger.warning(
-                    f"Confidence gate FAILED: Best similarity {best_similarity:.4f} < 0.18 threshold. "
-                    f"Description: '{description[:60]}...'"
+                    "No scored HTS candidates for shipment classification. "
+                    f"best_similarity={best_similarity:.4f} (informational only). Description: '{description[:60]}...'"
                 )
                 # Return top 5 candidates with full explainability
                 untrusted_candidates = []
@@ -509,7 +549,7 @@ class ClassificationEngine:
                     "success": False,
                     "status": status.value,
                     "error": "NO_CONFIDENT_MATCH",
-                    "error_reason": f"Best similarity {best_similarity:.4f} below confidence threshold (0.18). No confident match available.",
+                    "error_reason": "No HTS candidates could be scored from current inputs. Add documents or clarifications — low tariff-text similarity alone is not the sole cause of this state.",
                     "candidates": untrusted_candidates,  # Top 5 with full explainability
                     "metadata": {
                         "engine_version": self.engine_version,
@@ -520,8 +560,8 @@ class ClassificationEngine:
                         "post_score_count": post_score_count,
                         "best_similarity": best_similarity,
                         "best_8518_similarity": best_8518_similarity if best_8518_similarity > 0 else None,
-                        "threshold_used": "FAMILY_AWARE_0.16" if best_8518_similarity >= 0.16 else "0.18",
-                        "reason_code": reason_code if reason_code else "LOW_SIMILARITY_GATE",
+                        "threshold_used": "outcome_based",
+                        "reason_code": reason_code if reason_code else "NO_CANDIDATES_GATE",
                         "applied_filters": ["exclude_9903_text", "exclude_ch98_99", "exclude_noisy_desc"],
                         "applied_priors": self._collect_applied_priors(final_candidates) if final_candidates else [],  # Workstream 4.1-A
                         "noisy_excluded": candidate_result.get("noisy_excluded", 0),
@@ -544,12 +584,13 @@ class ClassificationEngine:
             # Handle REVIEW_REQUIRED
             if status == ClassificationStatus.REVIEW_REQUIRED:
                 processing_time_ms = int((time.time() - start_time) * 1000)
-                ambiguity_reason = []
-                if best_similarity >= 0.18 and best_similarity < 0.25:
-                    ambiguity_reason.append(f"Best similarity {best_similarity:.4f} is below strong confidence threshold (0.25)")
-                if product_analysis.analysis_confidence < 0.7:
-                    ambiguity_reason.append(f"Analysis confidence {product_analysis.analysis_confidence:.2f} is below threshold (0.7)")
-                
+                ambiguity_reason = _review_ambiguity_notes(
+                    final_candidates,
+                    top_score,
+                    product_analysis.analysis_confidence,
+                    reason_code,
+                )
+
                 # Workstream 4.2-B: Generate review explanation
                 from app.engines.classification.review_explanation import generate_review_explanation
                 review_explanation = generate_review_explanation(
@@ -615,7 +656,7 @@ class ClassificationEngine:
                             "primary_8518": primary_count,
                             "expanded": expanded_count
                         },
-                        "threshold_used": "FAMILY_AWARE_0.16" if best_8518_similarity >= 0.16 else "0.18",
+                        "threshold_used": "outcome_based",
                         "reason_code": reason_code if reason_code else "REVIEW_REQUIRED",
                         "product_analysis": analysis_metadata
                     }
@@ -624,6 +665,10 @@ class ClassificationEngine:
             # Quality gate: if top score < 0.20, reject all candidates
             # This prevents persistence of low-quality matches
             # Note: Status determination happens above, this is just for quality gating
+            #
+            # SUCCESS implies top_candidate_score >= 0.20 (see determine_status / MIN_TOP_CANDIDATE_SCORE_FOR_SUCCESS),
+            # so this branch should not trigger for SUCCESS paths. It can still run when status is e.g.
+            # CLARIFICATION_REQUIRED (missing attrs short-circuit before score gates) and top_score is low.
             if top_score < 0.20:
                 processing_time_ms = int((time.time() - start_time) * 1000)
                 logger.warning(
@@ -646,7 +691,7 @@ class ClassificationEngine:
                         "post_filter_count": post_filter_count,
                         "post_score_count": post_score_count,
                         "top_candidate_score": f"{top_score:.4f}",
-                        "best_similarity": best_similarity_for_gate,
+                        "best_similarity": best_similarity,
                         "quality_gate_failed": True,
                         "quality_gate_threshold": 0.20,
                         "threshold_used": "0.20",
@@ -697,14 +742,13 @@ class ClassificationEngine:
             
             processing_time_ms = int((time.time() - start_time) * 1000)
             
-            # Final status check for SUCCESS (Workstream E)
-            # SUCCESS requires: all attributes resolved, high similarity, high score, high confidence
+            # Final status check for SUCCESS (Workstream E): score + confidence + ambiguity (not lexical similarity)
             final_status = determine_status(
                 missing_required_attributes=product_analysis.missing_required_attributes,
-                best_similarity=best_similarity,
                 top_candidate_score=top_score,
                 analysis_confidence=product_analysis.analysis_confidence,
-                candidates_exist=len(final_candidates) > 0
+                candidates_exist=len(final_candidates) > 0,
+                ambiguity_requires_review=competitive_ambiguity_requires_review(final_candidates),
             )
             
             # Workstream 4.2-C: Invariant validation - SUCCESS must not have missing required attributes
@@ -719,6 +763,12 @@ class ClassificationEngine:
             review_explanation = None
             if final_status == ClassificationStatus.REVIEW_REQUIRED:
                 from app.engines.classification.review_explanation import generate_review_explanation
+                late_ambiguity = _review_ambiguity_notes(
+                    final_candidates,
+                    top_score,
+                    product_analysis.analysis_confidence,
+                    reason_code if reason_code else None,
+                )
                 review_explanation = generate_review_explanation(
                     status=final_status,
                     best_similarity=best_similarity,
@@ -729,7 +779,7 @@ class ClassificationEngine:
                     reason_code=reason_code if reason_code else "SUCCESS_FALLBACK",
                     best_8518_similarity=best_8518_similarity if best_8518_similarity > 0 else None,
                     missing_required_attributes=product_analysis.missing_required_attributes,
-                    ambiguity_reason=None
+                    ambiguity_reason=late_ambiguity
                 )
                 # Workstream 4.2-C: Validate explanation exists
                 if not review_explanation.get("primary_reasons") or not review_explanation.get("what_would_increase_confidence"):
@@ -766,7 +816,7 @@ class ClassificationEngine:
                         "primary_8518": primary_count,
                         "expanded": expanded_count
                     },
-                    "threshold_used": "FAMILY_AWARE_0.16" if best_8518_similarity >= 0.16 else "0.18",
+                    "threshold_used": "outcome_based",
                     "reason_code": reason_code if reason_code else "SUCCESS",
                     "product_analysis": analysis_metadata
                 },

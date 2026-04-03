@@ -63,6 +63,11 @@ class Shipment(Base):
         back_populates="shipment",
         cascade="all, delete-orphan",
     )
+    item_line_provenance = relationship(
+        "ShipmentItemLineProvenance",
+        back_populates="shipment",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<Shipment {self.name} ({self.status.value})>"
@@ -122,6 +127,11 @@ class ShipmentItem(Base):
     shipment = relationship("Shipment", back_populates="items")
     document_links = relationship(
         "ShipmentItemDocument",
+        back_populates="item",
+        cascade="all, delete-orphan",
+    )
+    line_provenance = relationship(
+        "ShipmentItemLineProvenance",
         back_populates="item",
         cascade="all, delete-orphan",
     )

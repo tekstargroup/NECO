@@ -53,7 +53,7 @@ async def test_generate_audit_pack_by_review_ids(audit_pack_service, mock_db):
     
     pack = await audit_pack_service.generate_audit_pack(review_ids=[review_id])
     
-    assert pack["audit_pack_version"] == "1.0"
+    assert pack["audit_pack_version"] == "2.0"
     assert "hts_version_id" in pack
     assert "disclaimer" in pack
     assert "review_records" in pack

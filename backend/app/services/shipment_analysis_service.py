@@ -9,9 +9,10 @@ This is the "truth payload" that the Celery task calls.
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Set
 from uuid import UUID
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,13 @@ from sqlalchemy import select, and_
 from app.models.shipment import Shipment, ShipmentStatus, ShipmentItem
 from app.models.shipment_document import ShipmentDocument, ShipmentDocumentType
 from app.models.shipment_item_document import ShipmentItemDocument, ItemDocumentMappingStatus
+from app.models.shipment_item_line_provenance import (
+    ShipmentItemLineProvenance,
+    LineProvenanceMappingMethod,
+)
+from app.models.shipment_item_classification_facts import ShipmentItemClassificationFacts
+from app.engines.classification.classification_facts import build_classification_facts_payload
+from app.engines.classification.heading_reasoning_trace import build_heading_reasoning_trace
 from app.models.review_record import ReviewRecord, ReviewStatus, ReviewableObjectType, ReviewReasonCode
 from app.models.regulatory_evaluation import RegulatoryEvaluation, RegulatoryCondition, Regulator, RegulatoryOutcome, ConditionState
 from app.engines.ingestion.document_processor import DocumentProcessor
@@ -36,141 +44,26 @@ from app.core.hts_constants import AUTHORITATIVE_HTS_VERSION_ID
 from app.services.enrichment_integration_service import EnrichmentIntegrationService
 from app.services.s3_upload_service import get_s3_client
 from app.core.config import settings
+from app.services.classification_memo import build_classification_memo, stable_classification_outcome
 
 logger = logging.getLogger(__name__)
 
 
-def build_classification_memo(classification: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Sprint D — human-readable classification trust layer (no fake precision).
-
-    Support levels (ordered by severity):
-      no_classification   — hard refusal, suppress HTS + alternatives
-      insufficient_support — engine ran but output unreliable
-      needs_input          — missing critical facts, ask user
-      weak_support         — low similarity, show with strong caveat
-      supported            — suggestion available for review
-    """
-    if not classification or not isinstance(classification, dict):
-        return {
-            "support_level": "no_classification",
-            "support_label": "No classification possible",
-            "summary": "No classification output was produced for this item.",
-            "suppress_alternatives": True,
-            "open_questions": [],
-        }
-    questions = classification.get("questions") or []
-    if classification.get("status") == "CLARIFICATION_REQUIRED" or questions:
-        return {
-            "support_level": "needs_input",
-            "support_label": "Needs input",
-            "summary": classification.get("blocking_reason")
-            or classification.get("error_reason")
-            or "Additional product facts are required before a reliable classification can be stated.",
-            "suppress_alternatives": True,
-            "open_questions": questions,
-        }
-    err = classification.get("error")
-    st = classification.get("status")
-    if err or st in ("NO_CONFIDENT_MATCH", "NO_GOOD_MATCH") or classification.get("success") is False:
-        best_sim = _memo_best_similarity(classification)
-        if best_sim is not None and best_sim < 0.15:
-            return {
-                "support_level": "no_classification",
-                "support_label": "No classification possible",
-                "summary": (
-                    classification.get("error_reason")
-                    or "Similarity to any tariff heading is extremely low. "
-                    "Cannot generate a reliable classification from current evidence."
-                ),
-                "suppress_alternatives": True,
-                "open_questions": [],
-            }
-        return {
-            "support_level": "insufficient_support",
-            "support_label": "Insufficient support",
-            "summary": classification.get("error_reason")
-            or err
-            or "No reliable classification generated from current evidence.",
-            "suppress_alternatives": False,
-            "open_questions": [],
-        }
-    pc = classification.get("primary_candidate")
-    if not pc:
-        cands = classification.get("candidates") or []
-        pc = cands[0] if cands else None
-    hts = pc.get("hts_code") if isinstance(pc, dict) else None
-    if isinstance(pc, dict):
-        sim = pc.get("similarity_score")
-        try:
-            sim_f = float(sim) if sim is not None else None
-        except (TypeError, ValueError):
-            sim_f = None
-        if sim_f is not None and sim_f < 0.15 and hts:
-            return {
-                "support_level": "no_classification",
-                "support_label": "No classification possible",
-                "proposed_hts": None,
-                "similarity_score": sim_f,
-                "summary": "Similarity to tariff language is extremely low; no reliable classification can be stated.",
-                "suppress_alternatives": True,
-                "open_questions": questions,
-            }
-        if sim_f is not None and sim_f < 0.22 and hts:
-            return {
-                "support_level": "weak_support",
-                "support_label": "Weak match — verify",
-                "proposed_hts": hts,
-                "similarity_score": sim_f,
-                "suppress_alternatives": False,
-                "summary": (
-                    "Textual similarity to tariff language is low; this is a hypothesis to verify against "
-                    "your product evidence and broker—not a determination."
-                ),
-                "open_questions": questions,
-            }
-    return {
-        "support_level": "supported",
-        "support_label": "Supported",
-        "proposed_hts": hts,
-        "suppress_alternatives": False,
-        "summary": "A classification suggestion is available; confirm against your evidence and broker.",
-        "open_questions": questions,
-    }
-
-
-_OUTCOME_VOCABULARY = {
-    "no_classification": "NO_CLASSIFICATION_POSSIBLE",
-    "needs_input": "NEEDS_INPUT",
-    "insufficient_support": "INSUFFICIENT_SUPPORT",
-    "weak_support": "INSUFFICIENT_SUPPORT",
-    "supported": "SUPPORTED",
-}
-
-
-def stable_classification_outcome(support_level: str) -> str:
-    """Map internal support_level to the stable API classification_outcome enum."""
-    return _OUTCOME_VOCABULARY.get(support_level, "UNKNOWN")
-
-
-def _memo_best_similarity(classification: Dict[str, Any]) -> Optional[float]:
-    """Extract the best similarity score from classification metadata or candidates."""
-    meta = classification.get("metadata") or {}
-    bs = meta.get("best_similarity")
-    if bs is not None:
-        try:
-            return float(bs)
-        except (TypeError, ValueError):
-            pass
-    cands = classification.get("candidates") or []
-    sims = []
-    for c in cands:
-        s = c.get("similarity_score") if isinstance(c, dict) else None
-        if s is not None:
-            try:
-                sims.append(float(s))
-            except (TypeError, ValueError):
-                pass
-    return max(sims) if sims else None
+def _product_analysis_from_classification_result(result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Extract serialized product_analysis dict from engine response (Patch D facts layer)."""
+    if not result or not isinstance(result, dict):
+        return {}
+    meta = result.get("metadata") or {}
+    pa = meta.get("product_analysis")
+    if isinstance(pa, dict) and pa:
+        return pa
+    inner = result.get("product_analysis")
+    if isinstance(inner, dict) and inner:
+        return inner
+    orig = result.get("original_classification")
+    if isinstance(orig, dict):
+        return _product_analysis_from_classification_result(orig)
+    return {}
 
 
 def _get_hts_if_supported(
@@ -328,6 +221,10 @@ def _get_critical_missing(
     description: str,
 ) -> List[str]:
     """Determine which missing attributes are critical based on product-family heuristics."""
+    if getattr(settings, "CLASSIFICATION_FAMILY_ROUTER_ENABLED", False):
+        from app.engines.classification.family_router import critical_missing_for_family
+
+        return critical_missing_for_family(missing_attrs, description)
     d = (description or "").lower()
     family = "default"
     if any(kw in d for kw in ("surgical", "endoscop", "medical", "clinical", "patient")):
@@ -561,6 +458,7 @@ class ShipmentAnalysisService:
         organization_id: UUID,
         actor_user_id: UUID,
         clarification_responses: Optional[Dict[str, Dict[str, Any]]] = None,
+        analysis_id: Optional[UUID] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any], List[str]]:
         """
         Run full shipment analysis.
@@ -609,7 +507,13 @@ class ShipmentAnalysisService:
         logger.info("run_full_shipment_analysis: documents parsed (evidence_map has %s docs), importing line items", len(ev_docs))
 
         # Step 2b: Import / reconcile line items from Entry Summary / Commercial Invoice
-        import_summary: Dict[str, Any] = {"imported": 0, "merged": 0, "skipped": 0, "conflicts": []}
+        import_summary: Dict[str, Any] = {
+            "imported": 0,
+            "merged": 0,
+            "skipped": 0,
+            "conflicts": [],
+            "provenance_skipped": [],
+        }
         try:
             import_summary = await self._import_line_items_from_documents(shipment)
         except Exception as e:
@@ -624,6 +528,8 @@ class ShipmentAnalysisService:
                 actor_user_id=actor_user_id,
                 evidence_map=evidence_map,
                 item_doc_link_map=item_doc_link_map,
+                analysis_id=analysis_id,
+                organization_id=organization_id,
             )
             result_json["import_summary"] = import_summary
             logger.info("run_full_shipment_analysis: fast local analysis done for shipment %s", shipment_id)
@@ -632,6 +538,7 @@ class ShipmentAnalysisService:
         # Step 3: Run existing engines
         logger.info("run_full_shipment_analysis: running classification/duty/PSC for shipment %s (%s items)", shipment_id, len(shipment.items or []))
         classification_results = {}
+        classification_facts_by_item: Dict[str, Any] = {}
         duty_results = {}
         psc_results = {}
         enrichment_conflicts = []
@@ -650,6 +557,7 @@ class ShipmentAnalysisService:
                 )
                 if ds_text:
                     description = f"{description}\n\nData sheet evidence:\n{ds_text}"
+            last_product_analysis: Optional[Dict[str, Any]] = None
             try:
                 item_responses = (clarification_responses or {}).get(item_id) if clarification_responses else None
                 classification_result = await self.classification_engine.generate_alternatives(
@@ -688,9 +596,47 @@ class ShipmentAnalysisService:
                             rule_result.confidence,
                         )
                 classification_results[item_id] = classification_result
+                last_product_analysis = _product_analysis_from_classification_result(classification_result)
             except Exception as e:
                 logger.error(f"Classification engine error for item {item_id}: {e}")
                 classification_results[item_id] = {"error": str(e)}
+                last_product_analysis = {
+                    "product_family": "unknown",
+                    "extracted_attributes": {},
+                    "missing_required_attributes": [],
+                    "analysis_confidence": 0.2,
+                    "rationale": f"classification_engine_error: {e}",
+                    "family_matched_rule": "",
+                    "family_selection_confidence": 0.0,
+                }
+
+            # Patch D: one ShipmentItemClassificationFacts row per (analysis_id, item.id); uq on (analysis_id, shipment_item_id).
+            # Re-running this pipeline with the same analysis_id will duplicate-insert unless rows are cleared first.
+            def _persist_item_classification_facts(pa: Optional[Dict[str, Any]]) -> None:
+                base = dict(pa) if pa else {}
+                if not base.get("product_family"):
+                    base.setdefault("product_family", "unknown")
+                base.setdefault("extracted_attributes", {})
+                base.setdefault("missing_required_attributes", [])
+                base.setdefault("analysis_confidence", base.get("analysis_confidence", 0.0))
+                base.setdefault("rationale", base.get("rationale", ""))
+                fp = build_classification_facts_payload(
+                    product_analysis=base,
+                    shipment_item=item,
+                    description_used=description,
+                )
+                classification_facts_by_item[item_id] = fp
+                if analysis_id:
+                    self.db.add(
+                        ShipmentItemClassificationFacts(
+                            analysis_id=analysis_id,
+                            shipment_id=shipment.id,
+                            organization_id=organization_id,
+                            shipment_item_id=item.id,
+                            facts_json=fp,
+                            missing_facts_json=fp.get("missing_facts") or [],
+                        )
+                    )
 
             # Sprint D.3 — missing-facts blocking
             clf_for_check = classification_results.get(item_id)
@@ -716,7 +662,10 @@ class ShipmentAnalysisService:
                     }
                     duty_results[item_id] = None
                     psc_results[item_id] = None
+                    _persist_item_classification_facts(last_product_analysis)
                     continue
+
+            _persist_item_classification_facts(last_product_analysis)
 
             # Duty resolver — gated on classification quality (Sprint F.1)
             item_memo = build_classification_memo(classification_results.get(item_id))
@@ -752,6 +701,9 @@ class ShipmentAnalysisService:
                 except Exception as e:
                     logger.error(f"PSC Radar error for item {item_id}: {e}")
                     psc_results[item_id] = {"error": str(e)}
+
+        if analysis_id:
+            await self.db.flush()
         
         # Enrichment (check for conflicts)
         # TODO: Integrate enrichment service properly
@@ -863,6 +815,17 @@ class ShipmentAnalysisService:
             except Exception:
                 pass
 
+        line_provenance_map: Dict[str, List[ShipmentItemLineProvenance]] = {}
+        if shipment.items:
+            item_ids = [it.id for it in shipment.items]
+            _prov_res = await self.db.execute(
+                select(ShipmentItemLineProvenance).where(
+                    ShipmentItemLineProvenance.shipment_item_id.in_(item_ids)
+                )
+            )
+            for _pr in _prov_res.scalars().all():
+                line_provenance_map.setdefault(str(_pr.shipment_item_id), []).append(_pr)
+
         def _get_primary_candidate(clf: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
             """Derive primary_candidate from candidates[0] for frontend compatibility."""
             if not clf or not isinstance(clf, dict):
@@ -906,6 +869,13 @@ class ShipmentAnalysisService:
             hts = item.declared_hts or _get_hts_if_supported(clf, memo)
             suppress = bool(memo.get("suppress_alternatives"))
             support_level = memo.get("support_level", "unknown") if memo else "unknown"
+            ev_used = _build_item_evidence_used(
+                item.label, shipment.documents or [], item.id, item_doc_link_map,
+            )
+            line_prov = self._line_provenance_api_rows(
+                line_provenance_map.get(iid, []),
+                shipment.documents or [],
+            )
             return {
                 "id": iid,
                 "label": item.label,
@@ -921,10 +891,15 @@ class ShipmentAnalysisService:
                 "supplemental_evidence_source": getattr(item, "supplemental_evidence_source", None),
                 "needs_supplemental_evidence": _item_needs_supplemental(clf),
                 "suppress_alternatives": suppress,
-                "evidence_used": _build_item_evidence_used(
-                    item.label, shipment.documents or [], item.id, item_doc_link_map,
-                ),
+                "evidence_used": ev_used,
                 "prior_knowledge": prior_knowledge.get(iid),
+                "line_provenance": line_prov,
+                "classification_facts": classification_facts_by_item.get(iid),
+                "heading_reasoning_trace": build_heading_reasoning_trace(
+                    None if suppress else clf,
+                    evidence_used=ev_used,
+                    line_provenance=line_prov,
+                ),
             }
 
         result_json = {
@@ -971,6 +946,17 @@ class ShipmentAnalysisService:
         await self.db.refresh(shipment, ["items"])
         
         items = shipment.items or []
+        line_provenance_preview: Dict[str, List[ShipmentItemLineProvenance]] = {}
+        if items:
+            _pids = [i.id for i in items]
+            _pv = await self.db.execute(
+                select(ShipmentItemLineProvenance).where(
+                    ShipmentItemLineProvenance.shipment_item_id.in_(_pids)
+                )
+            )
+            for _row in _pv.scalars().all():
+                line_provenance_preview.setdefault(str(_row.shipment_item_id), []).append(_row)
+
         es_duty_by_line = self._get_es_duty_per_line(evidence_map)
         duty_total = sum((d.get("amount") or 0) for d in es_duty_by_line.values())
         
@@ -979,6 +965,10 @@ class ShipmentAnalysisService:
                 "label": getattr(i, "label", None) or f"Item {idx + 1}",
                 "value": getattr(i, "value", None),
                 "hts_code": getattr(i, "declared_hts", None),
+                "line_provenance": self._line_provenance_api_rows(
+                    line_provenance_preview.get(str(i.id), []),
+                    shipment.documents or [],
+                ),
             }
             for idx, i in enumerate(items[:10])
         ]
@@ -1078,12 +1068,15 @@ class ShipmentAnalysisService:
         actor_user_id: UUID,
         evidence_map: Dict[str, Any],
         item_doc_link_map: Optional[Dict[str, List[UUID]]] = None,
+        analysis_id: Optional[UUID] = None,
+        organization_id: Optional[UUID] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any], List[str]]:
         """
         Build a deterministic lightweight analysis result in local/dev mode.
         Enriches with ES duty, origin mismatch, COO confirmation prompt, and PSC for high-duty items.
         """
         classification_results: Dict[str, Any] = {}
+        classification_facts_by_item: Dict[str, Any] = {}
         duty_results: Dict[str, Any] = {}
         psc_results: Dict[str, Any] = {}
         enrichment_conflicts: List[str] = []
@@ -1113,6 +1106,17 @@ class ShipmentAnalysisService:
         origin_mismatches = self._detect_origin_mismatches_from_evidence(evidence_map)
 
         coo_country_names = {"CN": "China", "DE": "Germany", "US": "United States", "VN": "Vietnam", "MX": "Mexico", "JP": "Japan", "KR": "South Korea", "TW": "Taiwan", "IN": "India", "CA": "Canada"}
+
+        line_provenance_map_fast: Dict[str, List[ShipmentItemLineProvenance]] = {}
+        if shipment.items:
+            _iids = [it.id for it in shipment.items]
+            _prov_fast = await self.db.execute(
+                select(ShipmentItemLineProvenance).where(
+                    ShipmentItemLineProvenance.shipment_item_id.in_(_iids)
+                )
+            )
+            for _pf in _prov_fast.scalars().all():
+                line_provenance_map_fast.setdefault(str(_pf.shipment_item_id), []).append(_pf)
 
         items_payload: List[Dict[str, Any]] = []
         for idx, item in enumerate(shipment.items or []):
@@ -1171,14 +1175,60 @@ class ShipmentAnalysisService:
                             rule_result.confidence,
                         )
                 classification_results[item_id] = classification_result
+                last_product_analysis = _product_analysis_from_classification_result(classification_result)
             except Exception as e:
                 logger.warning(f"Classification engine error in fast path for item {item.id}: {e}")
                 classification_results[item_id] = {"error": str(e)}
+                last_product_analysis = {
+                    "product_family": "unknown",
+                    "extracted_attributes": {},
+                    "missing_required_attributes": [],
+                    "analysis_confidence": 0.2,
+                    "rationale": f"classification_engine_error: {e}",
+                    "family_matched_rule": "",
+                    "family_selection_confidence": 0.0,
+                }
+
+            # Patch D: same uniqueness contract as full path (one facts row per analysis_id + item).
+            def _persist_fast_classification_facts(pa: Optional[Dict[str, Any]]) -> None:
+                base = dict(pa) if pa else {}
+                if not base.get("product_family"):
+                    base.setdefault("product_family", "unknown")
+                base.setdefault("extracted_attributes", {})
+                base.setdefault("missing_required_attributes", [])
+                base.setdefault("analysis_confidence", base.get("analysis_confidence", 0.0))
+                base.setdefault("rationale", base.get("rationale", ""))
+                fp = build_classification_facts_payload(
+                    product_analysis=base,
+                    shipment_item=item,
+                    description_used=description,
+                )
+                classification_facts_by_item[item_id] = fp
+                if analysis_id:
+                    self.db.add(
+                        ShipmentItemClassificationFacts(
+                            analysis_id=analysis_id,
+                            shipment_id=shipment_id,
+                            organization_id=organization_id,
+                            shipment_item_id=item.id,
+                            facts_json=fp,
+                            missing_facts_json=fp.get("missing_facts") or [],
+                        )
+                    )
+
+            _persist_fast_classification_facts(last_product_analysis)
 
             fast_clf = classification_results.get(item_id)
             fast_memo = build_classification_memo(fast_clf)
             fast_suppress = bool(fast_memo.get("suppress_alternatives"))
             fast_support_level = fast_memo.get("support_level", "unknown") if fast_memo else "unknown"
+            fast_ev = _build_item_evidence_used(
+                item.label, shipment.documents or [], item.id, item_doc_link_map or {},
+            )
+            fast_lp = self._line_provenance_api_rows(
+                line_provenance_map_fast.get(item_id, []),
+                shipment.documents or [],
+            )
             item_dict: Dict[str, Any] = {
                 "id": str(item.id),
                 "label": item.label,
@@ -1192,8 +1242,13 @@ class ShipmentAnalysisService:
                 "supplemental_evidence_source": getattr(item, "supplemental_evidence_source", None),
                 "needs_supplemental_evidence": _item_needs_supplemental(fast_clf),
                 "suppress_alternatives": fast_suppress,
-                "evidence_used": _build_item_evidence_used(
-                    item.label, shipment.documents or [], item.id, item_doc_link_map or {},
+                "evidence_used": fast_ev,
+                "line_provenance": fast_lp,
+                "classification_facts": classification_facts_by_item.get(item_id),
+                "heading_reasoning_trace": build_heading_reasoning_trace(
+                    None if fast_suppress else fast_clf,
+                    evidence_used=fast_ev,
+                    line_provenance=fast_lp,
                 ),
             }
             if duty_from_es:
@@ -1233,6 +1288,9 @@ class ShipmentAnalysisService:
                     logger.warning(f"PSC Radar error in fast path for item {item.id}: {e}")
 
             items_payload.append(item_dict)
+
+        if analysis_id:
+            await self.db.flush()
 
         for m in origin_mismatches:
             ci_name = coo_country_names.get(m["ci_country"], m["ci_country"])
@@ -1534,17 +1592,111 @@ class ShipmentAnalysisService:
             return None
         return cls._COO_MAP.get(s, s[:2])
 
+    @staticmethod
+    def _document_type_label(document_type: str) -> str:
+        if document_type == ShipmentDocumentType.ENTRY_SUMMARY.value:
+            return "Entry Summary"
+        if document_type == ShipmentDocumentType.COMMERCIAL_INVOICE.value:
+            return "Commercial Invoice"
+        return document_type
+
+    def _line_provenance_api_rows(
+        self,
+        rows: List[ShipmentItemLineProvenance],
+        documents: List[Any],
+    ) -> List[Dict[str, Any]]:
+        """UI/debug payload: human-readable linkage (stable item identity)."""
+        doc_map = {d.id: d for d in (documents or [])}
+        out: List[Dict[str, Any]] = []
+        for p in rows:
+            d = doc_map.get(p.shipment_document_id)
+            dt = d.document_type.value if d else "UNKNOWN"
+            label = self._document_type_label(dt)
+            display_ln = p.logical_line_number if p.logical_line_number is not None else (p.line_index + 1)
+            out.append(
+                {
+                    "shipment_document_id": str(p.shipment_document_id),
+                    "document_type": dt,
+                    "filename": d.filename if d else None,
+                    "line_index": p.line_index,
+                    "logical_line_number": p.logical_line_number,
+                    "mapping_method": p.mapping_method,
+                    "summary": f"Linked to {label} line {display_ln} (array index {p.line_index})",
+                    "raw_line_text": (p.raw_line_text or "")[:2000],
+                    "structured_snapshot": p.structured_snapshot,
+                }
+            )
+        return out
+
+    async def _ensure_line_provenance_for_item(
+        self,
+        shipment: Shipment,
+        item: ShipmentItem,
+        sources: List[Dict[str, Any]],
+    ) -> None:
+        """Idempotent: insert provenance rows for structured CI/ES lines."""
+        if not sources:
+            return
+        for src in sources:
+            doc_id = src["document_id"]
+            array_index = int(src["array_index"])
+            existing = await self.db.execute(
+                select(ShipmentItemLineProvenance.id).where(
+                    and_(
+                        ShipmentItemLineProvenance.shipment_item_id == item.id,
+                        ShipmentItemLineProvenance.shipment_document_id == doc_id,
+                        ShipmentItemLineProvenance.line_index == array_index,
+                    )
+                ).limit(1)
+            )
+            if existing.scalar_one_or_none():
+                continue
+            raw_dict = src.get("raw_dict") if isinstance(src.get("raw_dict"), dict) else {}
+            desc = raw_dict.get("description")
+            raw_text = str(desc).strip() if desc is not None else None
+            if not raw_text:
+                try:
+                    raw_text = json.dumps(raw_dict, default=str)[:8000]
+                except Exception:
+                    raw_text = str(raw_dict)[:8000]
+            dt = src.get("document_type") or ""
+            method = (
+                LineProvenanceMappingMethod.STRUCTURED_IMPORT_ES
+                if dt == ShipmentDocumentType.ENTRY_SUMMARY.value
+                else LineProvenanceMappingMethod.STRUCTURED_IMPORT_CI
+            )
+            self.db.add(
+                ShipmentItemLineProvenance(
+                    shipment_id=shipment.id,
+                    organization_id=shipment.organization_id,
+                    shipment_item_id=item.id,
+                    shipment_document_id=doc_id,
+                    line_index=array_index,
+                    logical_line_number=src.get("logical_line_number"),
+                    raw_line_text=raw_text,
+                    mapping_method=method,
+                    structured_snapshot=raw_dict or None,
+                )
+            )
+
     async def _import_line_items_from_documents(self, shipment: Shipment) -> Dict[str, Any]:
         """Import line items from Entry Summary / Commercial Invoice with idempotent merge.
 
-        Returns a summary: {"imported": N, "merged": N, "skipped": N, "conflicts": [...]}
+        Returns a summary: {"imported": N, "merged": N, "skipped": N, "conflicts": [...], "provenance_skipped": [...]}
         Always additive — never silently skips when items already exist.
         """
-        summary: Dict[str, Any] = {"imported": 0, "merged": 0, "skipped": 0, "conflicts": []}
+        summary: Dict[str, Any] = {
+            "imported": 0,
+            "merged": 0,
+            "skipped": 0,
+            "conflicts": [],
+            "provenance_skipped": [],
+        }
 
-        # --- 1. Extract lines from documents ---
+        # --- 1. Extract lines from documents (and authoritative line_sources for provenance) ---
         es_items: Dict[int, Dict[str, Any]] = {}
         ci_items: Dict[int, Dict[str, Any]] = {}
+        line_sources: Dict[int, List[Dict[str, Any]]] = {}
 
         for doc in shipment.documents:
             data = doc.structured_data
@@ -1564,6 +1716,15 @@ class ShipmentAnalysisService:
                     idx = i + 1
 
                 if doc.document_type == ShipmentDocumentType.ENTRY_SUMMARY:
+                    line_sources.setdefault(idx, []).append(
+                        {
+                            "document_id": doc.id,
+                            "document_type": doc.document_type.value,
+                            "array_index": i,
+                            "logical_line_number": idx,
+                            "raw_dict": li,
+                        }
+                    )
                     es_items[idx] = {
                         "description": li.get("description"),
                         "hts_code": li.get("hts_code"),
@@ -1573,6 +1734,15 @@ class ShipmentAnalysisService:
                         "value": li.get("entered_value"),
                     }
                 elif doc.document_type == ShipmentDocumentType.COMMERCIAL_INVOICE:
+                    line_sources.setdefault(idx, []).append(
+                        {
+                            "document_id": doc.id,
+                            "document_type": doc.document_type.value,
+                            "array_index": i,
+                            "logical_line_number": idx,
+                            "raw_dict": li,
+                        }
+                    )
                     val = li.get("total")
                     if val is None and li.get("unit_price") is not None and li.get("quantity") is not None:
                         try:
@@ -1621,6 +1791,9 @@ class ShipmentAnalysisService:
                 existing_by_hts_coo[f"{item.declared_hts}:{item.country_of_origin}"] = item
 
         # --- 4. Reconcile each incoming line ---
+        new_items_by_line: Dict[int, ShipmentItem] = {}
+        merged_items_by_line: Dict[int, ShipmentItem] = {}
+
         for _line_num, m in sorted(incoming.items()):
             label = str(m.get("description") or f"Line {_line_num}")[:255]
             inc_hts = m["hts_code"]
@@ -1649,7 +1822,18 @@ class ShipmentAnalysisService:
                         "incoming_hts": inc_hts,
                         "reason": "HTS mismatch on matched item",
                     })
+                    summary["provenance_skipped"].append(
+                        {"line_num": _line_num, "reason": "hts_conflict"}
+                    )
+                    logger.warning(
+                        "provenance_skipped shipment_id=%s line_num=%s reason=%s",
+                        shipment.id,
+                        _line_num,
+                        "hts_conflict",
+                    )
                     continue
+
+                merged_items_by_line[_line_num] = matched
 
                 # Check if all fields identical → skip
                 fields_same = (
@@ -1695,10 +1879,22 @@ class ShipmentAnalysisService:
                 country_of_origin=inc_coo,
             )
             self.db.add(new_item)
+            new_items_by_line[_line_num] = new_item
             summary["imported"] += 1
 
-        if summary["imported"] or summary["merged"]:
+        if incoming:
             await self.db.flush()
+            for line_num in sorted(incoming.keys()):
+                srcs = line_sources.get(line_num) or []
+                if not srcs:
+                    continue
+                item = new_items_by_line.get(line_num) or merged_items_by_line.get(line_num)
+                if item:
+                    await self._ensure_line_provenance_for_item(shipment, item, srcs)
+            await self.db.flush()
+
+        await self._auto_link_line_items_to_source_documents(shipment)
+
         total = summary["imported"] + summary["merged"] + summary["skipped"] + len(summary["conflicts"])
         logger.info(
             "import_line_items shipment=%s: imported=%d merged=%d skipped=%d conflicts=%d total=%d",
@@ -1706,6 +1902,103 @@ class ShipmentAnalysisService:
             summary["skipped"], len(summary["conflicts"]), total,
         )
         return summary
+
+    async def _auto_link_line_items_to_source_documents(self, shipment: Shipment) -> None:
+        """Create AUTO item-document links: provenance-first, then hash/label fallback."""
+        await self.db.refresh(shipment, ["items", "documents"])
+        org_id = shipment.organization_id
+        if not shipment.items or not shipment.documents:
+            return
+
+        prov_rows = (
+            await self.db.execute(
+                select(ShipmentItemLineProvenance).where(
+                    ShipmentItemLineProvenance.shipment_id == shipment.id
+                )
+            )
+        ).scalars().all()
+        prov_pairs: Set[Tuple[UUID, UUID]] = set()
+        for p in prov_rows:
+            prov_pairs.add((p.shipment_item_id, p.shipment_document_id))
+
+        # 1) Authoritative: one AUTO link per (item, document) that has structured provenance
+        seen_link: Set[Tuple[UUID, UUID]] = set()
+        for p in prov_rows:
+            pair = (p.shipment_item_id, p.shipment_document_id)
+            if pair in seen_link:
+                continue
+            seen_link.add(pair)
+            existing = await self.db.execute(
+                select(ShipmentItemDocument.id).where(
+                    and_(
+                        ShipmentItemDocument.shipment_item_id == p.shipment_item_id,
+                        ShipmentItemDocument.shipment_document_id == p.shipment_document_id,
+                    )
+                ).limit(1)
+            )
+            if existing.scalar_one_or_none():
+                continue
+            self.db.add(
+                ShipmentItemDocument(
+                    shipment_id=shipment.id,
+                    organization_id=org_id,
+                    shipment_item_id=p.shipment_item_id,
+                    shipment_document_id=p.shipment_document_id,
+                    mapping_status=ItemDocumentMappingStatus.AUTO,
+                )
+            )
+        await self.db.flush()
+
+        # 2) Fallback: label/hash reconstruction only when no provenance row for (item, doc)
+        for doc in shipment.documents:
+            if doc.document_type not in (
+                ShipmentDocumentType.COMMERCIAL_INVOICE,
+                ShipmentDocumentType.ENTRY_SUMMARY,
+            ):
+                continue
+            data = doc.structured_data or {}
+            if not isinstance(data, dict) or data.get("error"):
+                continue
+            line_items = data.get("line_items")
+            if not line_items or not isinstance(line_items, list):
+                continue
+
+            for i, li in enumerate(line_items):
+                if not isinstance(li, dict):
+                    continue
+                desc = str(li.get("description") or f"Line {i + 1}")[:255]
+                h = self._desc_hash(desc)
+                matched_item: Optional[ShipmentItem] = None
+                for it in shipment.items:
+                    if self._desc_hash(it.label) == h or (it.label or "").strip() == desc.strip():
+                        matched_item = it
+                        break
+                if matched_item is None:
+                    continue
+                if (matched_item.id, doc.id) in prov_pairs:
+                    continue
+
+                existing = await self.db.execute(
+                    select(ShipmentItemDocument.id).where(
+                        and_(
+                            ShipmentItemDocument.shipment_item_id == matched_item.id,
+                            ShipmentItemDocument.shipment_document_id == doc.id,
+                        )
+                    ).limit(1)
+                )
+                if existing.scalar_one_or_none():
+                    continue
+
+                self.db.add(
+                    ShipmentItemDocument(
+                        shipment_id=shipment.id,
+                        organization_id=org_id,
+                        shipment_item_id=matched_item.id,
+                        shipment_document_id=doc.id,
+                        mapping_status=ItemDocumentMappingStatus.AUTO,
+                    )
+                )
+        await self.db.flush()
 
     def _determine_eligibility_path(self, shipment: Shipment) -> str:
         """Determine which eligibility path was used."""

@@ -25,6 +25,11 @@ from .membership import Membership, UserRole
 from .shipment import Shipment, ShipmentStatus, ShipmentReference, ShipmentItem
 from .shipment_document import ShipmentDocument, ShipmentDocumentType
 from .shipment_item_document import ShipmentItemDocument, ItemDocumentMappingStatus
+from .shipment_item_line_provenance import (
+    ShipmentItemLineProvenance,
+    LineProvenanceMappingMethod,
+)
+from .shipment_item_classification_facts import ShipmentItemClassificationFacts
 from .analysis import Analysis, AnalysisStatus, RefusalReasonCode
 from .entitlement import Entitlement
 from .export import Export, ExportType, ExportStatus
@@ -82,6 +87,9 @@ __all__ = [
     "ShipmentDocumentType",
     "ShipmentItemDocument",
     "ItemDocumentMappingStatus",
+    "ShipmentItemLineProvenance",
+    "LineProvenanceMappingMethod",
+    "ShipmentItemClassificationFacts",
     "Analysis",
     "AnalysisStatus",
     "RefusalReasonCode",

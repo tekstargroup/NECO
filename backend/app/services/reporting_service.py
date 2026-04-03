@@ -35,8 +35,8 @@ class ReportingService:
     ) -> Dict[str, Any]:
         """
         Generate Classification Risk Report.
-        
-        Buckets classifications by confidence level (low/medium/high).
+
+        Buckets by classification outcome (status), not lexical similarity bands.
         
         Returns:
             Dictionary with risk buckets and counts
@@ -61,7 +61,7 @@ class ReportingService:
         result = await self.db.execute(query)
         records = list(result.scalars().all())
         
-        # Bucket by confidence (from snapshot)
+        # Bucket by classification status in snapshot output (not similarity)
         low_confidence = []
         medium_confidence = []
         high_confidence = []
@@ -69,17 +69,16 @@ class ReportingService:
         for record in records:
             snapshot = record.object_snapshot
             output = snapshot.get("output", {})
-            
-            # Extract confidence from status or metadata
-            status = output.get("status", "")
-            similarity = snapshot.get("metadata", {}).get("best_similarity", 0.0)
-            
-            if status == "NO_CONFIDENT_MATCH" or similarity < 0.18:
+            status = (output.get("status") or "").strip()
+
+            if status in ("NO_CONFIDENT_MATCH", "NO_GOOD_MATCH", "CLARIFICATION_REQUIRED"):
                 low_confidence.append(record.id)
-            elif status == "REVIEW_REQUIRED" or 0.18 <= similarity < 0.25:
+            elif status == "REVIEW_REQUIRED":
                 medium_confidence.append(record.id)
-            else:
+            elif status == "SUCCESS":
                 high_confidence.append(record.id)
+            else:
+                medium_confidence.append(record.id)
         
         return {
             "report_type": "CLASSIFICATION_RISK",
