@@ -43,15 +43,28 @@ class ConditionState(str, enum.Enum):
 
 class RegulatoryEvaluation(Base):
     """
-    Regulatory applicability evaluation for a review.
-    
-    Immutable once tied to a ReviewRecord.
+    Regulatory applicability evaluation persisted per analysis run.
+
+    Primary access for replay/exports: ``analysis_id``. ``review_id`` links the workflow/review row.
+    ``shipment_item_id`` ties the evaluation to a line when the engine emitted ``item_id``.
     """
-    
+
     __tablename__ = "regulatory_evaluations"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    analysis_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("analyses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     review_id = Column(UUID(as_uuid=True), ForeignKey("review_records.id"), nullable=False, index=True)
+    shipment_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("shipment_items.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     
     # Regulatory body
     regulator = Column(SQLEnum(Regulator), nullable=False, index=True)
@@ -70,7 +83,9 @@ class RegulatoryEvaluation(Base):
     evaluation_version = Column(String(20), default="1.0")  # Track engine version
     
     # Relationships
+    analysis = relationship("Analysis", back_populates="regulatory_evaluations")
     review_record = relationship("ReviewRecord", back_populates="regulatory_evaluations")
+    shipment_item = relationship("ShipmentItem", foreign_keys=[shipment_item_id])
     conditions = relationship(
         "RegulatoryCondition",
         back_populates="evaluation",

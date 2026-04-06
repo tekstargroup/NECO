@@ -48,6 +48,12 @@ class ShipmentItemLineProvenance(Base):
     shipment_id = Column(UUID(as_uuid=True), ForeignKey("shipments.id"), nullable=False, index=True)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
     shipment_item_id = Column(UUID(as_uuid=True), ForeignKey("shipment_items.id"), nullable=False, index=True)
+    analysis_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("analyses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     shipment_document_id = Column(
         UUID(as_uuid=True), ForeignKey("shipment_documents.id"), nullable=False, index=True
     )
@@ -64,3 +70,4 @@ class ShipmentItemLineProvenance(Base):
     shipment = relationship("Shipment", back_populates="item_line_provenance")
     item = relationship("ShipmentItem", back_populates="line_provenance")
     document = relationship("ShipmentDocument", back_populates="item_line_provenance")
+    analysis = relationship("Analysis", foreign_keys=[analysis_id])

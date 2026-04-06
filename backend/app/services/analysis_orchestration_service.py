@@ -9,6 +9,7 @@ Orchestrates analysis execution with strict ordering:
 5. Enqueue Celery job
 """
 
+import copy
 import logging
 import asyncio
 from typing import Dict, Any, Optional
@@ -19,12 +20,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 
 from app.models.shipment import Shipment, ShipmentStatus
-from app.models.analysis import Analysis, AnalysisStatus, RefusalReasonCode
+from app.models.analysis import Analysis, AnalysisStatus, DecisionStatus, RefusalReasonCode
 from app.repositories.org_scoped_repository import OrgScopedRepository
+from app.services.analysis_identity_service import (
+    AnalysisIntegrityError,
+    maybe_promote_analysis_after_success,
+    next_analysis_version,
+    resolve_authoritative_analysis,
+    resolve_display_analysis,
+)
 from app.services.entitlement_service import EntitlementService
 from app.services.shipment_eligibility_service import ShipmentEligibilityService
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.services.reasoning_trace_persistence import merge_reasoning_traces_into_result_json
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +82,13 @@ class AnalysisOrchestrationService:
         
         if not eligibility["eligible"]:
             # Create Analysis REFUSED with INSUFFICIENT_DOCUMENTS
+            v = await next_analysis_version(self.db, shipment_id)
             analysis = Analysis(
                 shipment_id=shipment_id,
                 organization_id=organization_id,
                 status=AnalysisStatus.REFUSED,
+                version=v,
+                decision_status=DecisionStatus.BLOCKED,
                 refusal_reason_code=RefusalReasonCode.INSUFFICIENT_DOCUMENTS,
                 refusal_reason_text="; ".join(eligibility["missing_requirements"])
             )
@@ -111,10 +123,13 @@ class AnalysisOrchestrationService:
             else:
                 message = str(detail)
             
+            v = await next_analysis_version(self.db, shipment_id)
             analysis = Analysis(
                 shipment_id=shipment_id,
                 organization_id=organization_id,
                 status=AnalysisStatus.REFUSED,
+                version=v,
+                decision_status=DecisionStatus.BLOCKED,
                 refusal_reason_code=RefusalReasonCode.ENTITLEMENT_EXCEEDED,
                 refusal_reason_text=message
             )
@@ -217,10 +232,12 @@ class AnalysisOrchestrationService:
             shipment_id, instant_dev, settings.SPRINT12_INLINE_ANALYSIS_DEV, getattr(settings, "SPRINT12_SYNC_ANALYSIS_DEV", True),
             settings.ENVIRONMENT,
         )
+        v = await next_analysis_version(self.db, shipment_id)
         analysis = Analysis(
             shipment_id=shipment_id,
             organization_id=organization_id,
-            status=AnalysisStatus.QUEUED
+            status=AnalysisStatus.QUEUED,
+            version=v,
         )
         self.db.add(analysis)
         await self.db.commit()
@@ -260,6 +277,13 @@ class AnalysisOrchestrationService:
             analysis.completed_at = datetime.utcnow()
             analysis.result_json = minimal_result
             analysis.celery_task_id = analysis.celery_task_id or f"instant-{analysis.id}"
+            analysis.decision_status = DecisionStatus.DEGRADED
+            await maybe_promote_analysis_after_success(
+                self.db,
+                analysis_id=analysis.id,
+                shipment_id=shipment_id,
+                decision_status=analysis.decision_status,
+            )
             await self.db.commit()
             payload = await self.get_analysis_status(shipment_id=shipment_id, organization_id=organization_id)
             payload["sync"] = True
@@ -354,26 +378,30 @@ class AnalysisOrchestrationService:
         organization_id: UUID
     ) -> Dict[str, Any]:
         """
-        Get latest analysis status for shipment.
-        
-        Returns:
-            Latest Analysis + linked ReviewRecord info
+        Get analysis status for shipment (display resolution for the primary row).
+
+        ``analysis_id`` in the payload is from ``resolve_display_analysis`` (may include
+        in-flight or terminal fallback). ``authoritative_analysis_id`` is the promoted
+        ``is_active`` row only — use for filing/compliance when it must match the active
+        snapshot. See ``docs/PHASE1_RESOLUTION_CONTRACT.md``.
         """
         # Verify shipment belongs to org
         repo = OrgScopedRepository(self.db, Shipment)
         shipment = await repo.get_by_id(shipment_id, organization_id)
         
-        # Get latest analysis
-        result = await self.db.execute(
-            select(Analysis).where(
-                and_(
-                    Analysis.shipment_id == shipment_id,
-                    Analysis.organization_id == organization_id
-                )
-            ).order_by(Analysis.created_at.desc()).limit(1)
-        )
-        analysis = result.scalar_one_or_none()
-        
+        try:
+            analysis = await resolve_display_analysis(
+                self.db, shipment_id=shipment_id, organization_id=organization_id
+            )
+            authoritative = await resolve_authoritative_analysis(
+                self.db, shipment_id=shipment_id, organization_id=organization_id
+            )
+        except AnalysisIntegrityError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Analysis data integrity error: {exc}",
+            ) from exc
+
         if not analysis:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -416,7 +444,16 @@ class AnalysisOrchestrationService:
 
         payload = {
             "analysis_id": str(analysis.id),
+            "authoritative_analysis_id": (
+                str(authoritative.id) if authoritative else None
+            ),
+            "display_matches_authoritative": (
+                authoritative is not None and analysis.id == authoritative.id
+            ),
             "status": analysis.status.value,
+            "decision_status": analysis.decision_status.value if analysis.decision_status else None,
+            "is_active": analysis.is_active,
+            "version": analysis.version,
             "celery_task_id": analysis.celery_task_id,
             "queued_at": analysis.queued_at.isoformat() if analysis.queued_at else None,
             "started_at": analysis.started_at.isoformat() if analysis.started_at else None,
@@ -431,5 +468,16 @@ class AnalysisOrchestrationService:
         if settings.ENVIRONMENT.lower() in {"development", "dev", "local"}:
             payload["dev_context"] = dev_ctx
         if analysis.result_json is not None:
-            payload["result_json"] = analysis.result_json
+            rj = analysis.result_json
+            if isinstance(rj, dict):
+                rj_out = copy.deepcopy(rj)
+                await merge_reasoning_traces_into_result_json(
+                    self.db, analysis_id=analysis.id, result_json=rj_out
+                )
+                payload["result_json"] = rj_out
+                tc = rj_out.get("trust_contract")
+                if isinstance(tc, dict):
+                    payload["trust_contract"] = tc
+            else:
+                payload["result_json"] = rj
         return payload

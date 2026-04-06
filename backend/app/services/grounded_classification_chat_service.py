@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import UUID
 
+from app.services.trust_contract_consumer import REASONING_AND_PROVENANCE_SUPPORTING_ONLY
+
 
 def _norm(s: str) -> str:
     return (s or "").lower().strip()
@@ -275,6 +277,14 @@ def _answer_routing(item: Dict[str, Any], path_prefix: str) -> Tuple[str, List[D
     return "\n\n".join(parts), cites
 
 
+def _with_supporting_evidence_notice(answer: str, intent: str) -> str:
+    """Phase 1: reasoning trace / provenance answers are supporting, not guaranteed audit evidence."""
+    if intent not in ("routing", "document_evidence", "missing_facts"):
+        return answer
+    prefix = f"*{REASONING_AND_PROVENANCE_SUPPORTING_ONLY}*\n\n"
+    return prefix + answer
+
+
 def build_grounded_answer(
     result_json: Dict[str, Any],
     message: str,
@@ -336,6 +346,8 @@ def build_grounded_answer(
             }
             if scope and raw.get("answer"):
                 out["answer"] = str(raw["answer"]) + scope
+            if raw.get("answer"):
+                out["answer"] = _with_supporting_evidence_notice(str(out["answer"]), intent)
             return out
         text, cites = raw
         if text:
@@ -346,7 +358,7 @@ def build_grounded_answer(
                     f"pass `shipment_item_id` to target another line.)*"
                 )
             return {
-                "answer": text + scope,
+                "answer": _with_supporting_evidence_notice(text + scope, intent),
                 "citations": cites,
                 "refusal": False,
                 "intent": intent,

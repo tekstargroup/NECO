@@ -20,6 +20,7 @@ from app.api.dependencies_sprint12 import get_current_user_sprint12, get_current
 from app.models.review_record import ReviewRecord, ReviewStatus, ReviewReasonCode
 from app.models.shipment import Shipment
 from app.models.regulatory_evaluation import RegulatoryEvaluation, RegulatoryCondition
+from app.services.regulatory_evaluation_service import regulatory_select_for_review
 from app.models.user import User
 from app.models.organization import Organization
 
@@ -123,12 +124,9 @@ async def get_review(
         )
     review = row[0]
     
-    # Load regulatory evaluations
-    reg_eval_result = await db.execute(
-        select(RegulatoryEvaluation)
-        .where(RegulatoryEvaluation.review_id == review_id)
-        .options(selectinload(RegulatoryEvaluation.conditions))
-    )
+    # Load regulatory evaluations (analysis_id primary when present)
+    reg_stmt = regulatory_select_for_review(review).options(selectinload(RegulatoryEvaluation.conditions))
+    reg_eval_result = await db.execute(reg_stmt)
     regulatory_evaluations = reg_eval_result.scalars().all()
     
     # Build regulatory evaluations response
@@ -143,14 +141,17 @@ async def get_review(
             }
             for cond in reg_eval.conditions
         ]
-        reg_evals_data.append({
+        row = {
             "id": str(reg_eval.id),
             "regulator": reg_eval.regulator.value if hasattr(reg_eval.regulator, "value") else str(reg_eval.regulator),
             "outcome": reg_eval.outcome.value if hasattr(reg_eval.outcome, "value") else str(reg_eval.outcome),
             "explanation_text": reg_eval.explanation_text,
             "triggered_by_hts_code": reg_eval.triggered_by_hts_code,
-            "condition_evaluations": conditions_data
-        })
+            "condition_evaluations": conditions_data,
+        }
+        if getattr(reg_eval, "shipment_item_id", None):
+            row["item_id"] = str(reg_eval.shipment_item_id)
+        reg_evals_data.append(row)
     
     return ReviewResponse(
         id=str(review.id),
@@ -402,7 +403,7 @@ async def override_review(
         status=ReviewStatus.DRAFT,  # New override starts as DRAFT
         created_by=str(current_user.id),
         review_reason_code=ReviewReasonCode.OVERRIDE_MANUAL_CLASSIFICATION,  # Or appropriate code
-        override_of_review_id=prior_review.id
+        override_of_review_id=prior_review.id,
     )
     
     db.add(new_review)
@@ -416,15 +417,23 @@ async def override_review(
         .options(selectinload(RegulatoryEvaluation.conditions))
     )
     prior_reg_evals = prior_reg_evals_result.scalars().all()
-    
+
+    if prior_review.analysis_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot override: prior review has no analysis_id (legacy); re-run analysis first.",
+        )
+
     for prior_eval in prior_reg_evals:
-        # Create new evaluation linked to new review
+        # Create new evaluation linked to new review (same analysis run context)
         new_eval = RegulatoryEvaluation(
+            analysis_id=prior_review.analysis_id,
             review_id=new_review.id,
+            shipment_item_id=prior_eval.shipment_item_id,
             regulator=prior_eval.regulator,
             outcome=prior_eval.outcome,
             explanation_text=prior_eval.explanation_text,
-            triggered_by_hts_code=prior_eval.triggered_by_hts_code
+            triggered_by_hts_code=prior_eval.triggered_by_hts_code,
         )
         db.add(new_eval)
         await db.flush()

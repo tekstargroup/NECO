@@ -64,6 +64,15 @@ class ReviewRecord(Base):
     
     # Primary key
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Optional link to the analysis run this snapshot belongs to (Phase 1: unique per analysis for idempotent persist).
+    analysis_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("analyses.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     
     # Object identification
     object_type = Column(
@@ -113,6 +122,10 @@ class ReviewRecord(Base):
     )
     
     # Relationships
+    analysis_for_run = relationship(
+        "Analysis",
+        foreign_keys=[analysis_id],
+    )
     override_of = relationship(
         "ReviewRecord",
         remote_side=[id],

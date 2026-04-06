@@ -30,7 +30,10 @@ from .shipment_item_line_provenance import (
     LineProvenanceMappingMethod,
 )
 from .shipment_item_classification_facts import ShipmentItemClassificationFacts
-from .analysis import Analysis, AnalysisStatus, RefusalReasonCode
+from .analysis import Analysis, AnalysisStatus, DecisionStatus, RefusalReasonCode
+from .analysis_item_reasoning_trace import AnalysisItemReasoningTrace
+from .analysis_line_provenance_snapshot import AnalysisLineProvenanceSnapshot
+from .analysis_pipeline_stage import AnalysisPipelineStage, PipelineStageStatus
 from .entitlement import Entitlement
 from .export import Export, ExportType, ExportStatus
 from .raw_signal import RawSignal
@@ -92,7 +95,12 @@ __all__ = [
     "ShipmentItemClassificationFacts",
     "Analysis",
     "AnalysisStatus",
+    "DecisionStatus",
     "RefusalReasonCode",
+    "AnalysisPipelineStage",
+    "PipelineStageStatus",
+    "AnalysisItemReasoningTrace",
+    "AnalysisLineProvenanceSnapshot",
     "Entitlement",
     "Export",
     "ExportType",

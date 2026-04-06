@@ -32,6 +32,11 @@ from app.models.review_record import ReviewRecord
 from app.repositories.org_scoped_repository import OrgScopedRepository
 from app.services.entitlement_service import EntitlementService
 from app.services.shipment_eligibility_service import ShipmentEligibilityService
+from app.services.analysis_identity_service import (
+    AnalysisIntegrityError,
+    resolve_authoritative_analysis,
+    resolve_display_analysis,
+)
 from app.core.config import settings
 
 router = APIRouter()
@@ -126,6 +131,10 @@ class ShipmentDetailResponse(BaseModel):
     latest_analysis_status: Optional[str]
     latest_review_status: Optional[str]
     eligibility: dict
+    # Display vs authoritative analysis (see docs/PHASE1_RESOLUTION_CONTRACT.md)
+    display_analysis_id: Optional[str] = None
+    authoritative_analysis_id: Optional[str] = None
+    display_matches_authoritative: Optional[bool] = None
 
 
 # Endpoints
@@ -311,24 +320,28 @@ async def get_shipment(
     # Load relationships
     await db.refresh(shipment, ["references", "items", "documents", "analyses"])
     
-    # Get latest analysis status
-    latest_analysis_status = None
-    if shipment.analyses:
-        latest_analysis = max(shipment.analyses, key=lambda a: a.created_at)
-        latest_analysis_status = latest_analysis.status.value
-    
-    # Get latest review status (if linked)
+    try:
+        display_analysis = await resolve_display_analysis(
+            db, shipment_id=shipment.id, organization_id=current_org.id
+        )
+        authoritative_analysis = await resolve_authoritative_analysis(
+            db, shipment_id=shipment.id, organization_id=current_org.id
+        )
+    except AnalysisIntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Analysis data integrity error: {exc}",
+        ) from exc
+    latest_analysis_status = display_analysis.status.value if display_analysis else None
+
     latest_review_status = None
-    if shipment.analyses:
-        for analysis in sorted(shipment.analyses, key=lambda a: a.created_at, reverse=True):
-            if analysis.review_record_id:
-                result = await db.execute(
-                    select(ReviewRecord).where(ReviewRecord.id == analysis.review_record_id)
-                )
-                review_record = result.scalar_one_or_none()
-                if review_record:
-                    latest_review_status = review_record.status.value
-                    break
+    if display_analysis and display_analysis.review_record_id:
+        result = await db.execute(
+            select(ReviewRecord).where(ReviewRecord.id == display_analysis.review_record_id)
+        )
+        review_record = result.scalar_one_or_none()
+        if review_record:
+            latest_review_status = review_record.status.value
     
     # Format references
     references = [{"key": ref.reference_type, "value": ref.reference_value} for ref in shipment.references]
@@ -375,7 +388,16 @@ async def get_shipment(
         "documents": documents,
         "latest_analysis_status": latest_analysis_status,
         "latest_review_status": latest_review_status,
-        "eligibility": eligibility
+        "eligibility": eligibility,
+        "display_analysis_id": str(display_analysis.id) if display_analysis else None,
+        "authoritative_analysis_id": (
+            str(authoritative_analysis.id) if authoritative_analysis else None
+        ),
+        "display_matches_authoritative": (
+            display_analysis is not None
+            and authoritative_analysis is not None
+            and display_analysis.id == authoritative_analysis.id
+        ),
     }
 
 
@@ -1100,7 +1122,13 @@ async def get_shipment_trust_workflow(
     repo = OrgScopedRepository(db, Shipment)
     await repo.get_by_id(shipment_id, current_org.id)
     svc = TrustWorkflowService(db)
-    return await svc.compute_trust_workflow(shipment_id, current_org.id)
+    try:
+        return await svc.compute_trust_workflow(shipment_id, current_org.id)
+    except AnalysisIntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Analysis data integrity error: {exc}",
+        ) from exc
 
 
 class ItemDocumentLinkCreateRequest(BaseModel):
