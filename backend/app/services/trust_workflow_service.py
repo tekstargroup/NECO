@@ -9,17 +9,18 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.models.shipment import Shipment, ShipmentItem
 from app.models.shipment_document import ShipmentDocument, ShipmentDocumentType
-from app.models.analysis import Analysis, AnalysisStatus
+from app.models.analysis import AnalysisStatus
 from app.models.review_record import ReviewRecord, ReviewStatus
 from app.models.shipment_item_document import ShipmentItemDocument, ItemDocumentMappingStatus
 from app.repositories.org_scoped_repository import OrgScopedRepository
 from app.services.shipment_eligibility_service import ShipmentEligibilityService
+from app.services.analysis_identity_service import resolve_display_analysis
 
 
 def _document_trust_state(doc: ShipmentDocument) -> Dict[str, Any]:
@@ -111,18 +112,9 @@ class TrustWorkflowService:
 
         analysis_state = "not_started"
         review_ui = "not_reviewed"
-        ar = await self.db.execute(
-            select(Analysis)
-            .where(
-                and_(
-                    Analysis.shipment_id == shipment_id,
-                    Analysis.organization_id == organization_id,
-                )
-            )
-            .order_by(Analysis.created_at.desc())
-            .limit(1)
+        analysis = await resolve_display_analysis(
+            self.db, shipment_id=shipment_id, organization_id=organization_id
         )
-        analysis = ar.scalar_one_or_none()
         if analysis:
             if analysis.status == AnalysisStatus.COMPLETE and analysis.result_json:
                 analysis_state = "generated"

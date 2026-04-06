@@ -8,6 +8,10 @@ Key principles:
 - Explicit blockers
 - Conservative defaults
 - Human review required
+
+Trust boundary (Phase 1): duty rates here are resolved via `resolve_duty` for this bundle — not implied
+by `decision_status=TRUSTED` on the analysis alone. Use `result_json.trust_contract` when integrating with
+analysis results; do not assume TRUSTED covers duty/PSC JSON from the analysis payload.
 """
 
 import logging

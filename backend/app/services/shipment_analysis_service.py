@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models.shipment import Shipment, ShipmentStatus, ShipmentItem
 from app.models.shipment_document import ShipmentDocument, ShipmentDocumentType
@@ -45,14 +46,59 @@ from app.services.enrichment_integration_service import EnrichmentIntegrationSer
 from app.services.s3_upload_service import get_s3_client
 from app.core.config import settings
 from app.services.classification_memo import build_classification_memo, stable_classification_outcome
+from app.models.analysis_pipeline_stage import PipelineStageName, PipelineStageStatus
+from app.services.pipeline_stage_service import PipelineStageContext
+from app.services.reasoning_trace_persistence import persist_reasoning_traces_from_result_items
 
 logger = logging.getLogger(__name__)
+
+
+async def upsert_shipment_item_classification_facts(
+    db: AsyncSession,
+    *,
+    analysis_id: UUID,
+    shipment_id: UUID,
+    organization_id: UUID,
+    shipment_item_id: UUID,
+    facts_json: Dict[str, Any],
+    missing_facts_json: List[Any],
+) -> None:
+    """Idempotent facts row per (analysis_id, shipment_item_id) for Celery retries."""
+    tbl = ShipmentItemClassificationFacts
+    ins = pg_insert(tbl).values(
+        analysis_id=analysis_id,
+        shipment_id=shipment_id,
+        organization_id=organization_id,
+        shipment_item_id=shipment_item_id,
+        facts_json=facts_json,
+        missing_facts_json=missing_facts_json,
+        schema_version="1",
+    )
+    stmt = ins.on_conflict_do_update(
+        constraint="uq_classification_facts_analysis_item",
+        set_={
+            "facts_json": ins.excluded.facts_json,
+            "missing_facts_json": ins.excluded.missing_facts_json,
+            "shipment_id": ins.excluded.shipment_id,
+            "organization_id": ins.excluded.organization_id,
+            "schema_version": ins.excluded.schema_version,
+        },
+    )
+    await db.execute(stmt)
 
 
 def _product_analysis_from_classification_result(result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Extract serialized product_analysis dict from engine response (Patch D facts layer)."""
     if not result or not isinstance(result, dict):
         return {}
+
+
+def _product_analysis_for_classification_facts(classification: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Product analysis payload for facts upsert (handles CLARIFICATION_REQUIRED → original_classification)."""
+    if isinstance(classification, dict) and classification.get("status") == "CLARIFICATION_REQUIRED":
+        orig = classification.get("original_classification")
+        return _product_analysis_from_classification_result(orig if isinstance(orig, dict) else None)
+    return _product_analysis_from_classification_result(classification)
     meta = result.get("metadata") or {}
     pa = meta.get("product_analysis")
     if isinstance(pa, dict) and pa:
@@ -451,7 +497,51 @@ class ShipmentAnalysisService:
         self.regulatory_engine = RegulatoryApplicabilityEngine(db)
         self.enrichment_service = EnrichmentIntegrationService(db)
         self.rule_classifier = RuleBasedClassifier()
-    
+
+    async def _persist_reasoning_traces_phase2(
+        self,
+        *,
+        analysis_id: Optional[UUID],
+        organization_id: Optional[UUID],
+        shipment_id: UUID,
+        result_json: Dict[str, Any],
+        stage_ctx: Optional[PipelineStageContext],
+    ) -> None:
+        """Canonical DB rows for heading reasoning trace; idempotent per (analysis_id, item_id)."""
+        if not analysis_id or not organization_id:
+            return
+        items = result_json.get("items") or []
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.REASONING_TRACE_PERSIST,
+                PipelineStageStatus.RUNNING,
+                ordinal=32,
+            )
+        try:
+            await persist_reasoning_traces_from_result_items(
+                self.db,
+                analysis_id=analysis_id,
+                shipment_id=shipment_id,
+                organization_id=organization_id,
+                items=items if isinstance(items, list) else [],
+            )
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.REASONING_TRACE_PERSIST,
+                    PipelineStageStatus.SUCCEEDED,
+                    ordinal=32,
+                )
+        except Exception as e:
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.REASONING_TRACE_PERSIST,
+                    PipelineStageStatus.FAILED,
+                    ordinal=32,
+                    error_code="REASONING_TRACE_PERSIST_FAILED",
+                    error_message=str(e),
+                )
+            raise
+
     async def run_full_shipment_analysis(
         self,
         shipment_id: UUID,
@@ -459,6 +549,7 @@ class ShipmentAnalysisService:
         actor_user_id: UUID,
         clarification_responses: Optional[Dict[str, Dict[str, Any]]] = None,
         analysis_id: Optional[UUID] = None,
+        stage_ctx: Optional[PipelineStageContext] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any], List[str]]:
         """
         Run full shipment analysis.
@@ -501,7 +592,30 @@ class ShipmentAnalysisService:
         # Step 2: Parse PDFs and build evidence map
         doc_count = len(shipment.documents or [])
         logger.info("run_full_shipment_analysis: parsing %s document(s) for shipment %s", doc_count, shipment_id)
-        evidence_map = await self._parse_documents_and_build_evidence_map(shipment)
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.DOCUMENT_EVIDENCE,
+                PipelineStageStatus.RUNNING,
+                ordinal=10,
+            )
+        try:
+            evidence_map = await self._parse_documents_and_build_evidence_map(shipment)
+        except Exception as e:
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.DOCUMENT_EVIDENCE,
+                    PipelineStageStatus.FAILED,
+                    ordinal=10,
+                    error_code="DOCUMENT_EVIDENCE_FAILED",
+                    error_message=str(e),
+                )
+            raise
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.DOCUMENT_EVIDENCE,
+                PipelineStageStatus.SUCCEEDED,
+                ordinal=10,
+            )
         ev_docs = evidence_map.get("documents") or []
         ev_warnings = evidence_map.get("warnings") or []
         logger.info("run_full_shipment_analysis: documents parsed (evidence_map has %s docs), importing line items", len(ev_docs))
@@ -514,10 +628,31 @@ class ShipmentAnalysisService:
             "conflicts": [],
             "provenance_skipped": [],
         }
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.LINE_ITEM_IMPORT,
+                PipelineStageStatus.RUNNING,
+                ordinal=20,
+            )
         try:
             import_summary = await self._import_line_items_from_documents(shipment)
         except Exception as e:
-            logger.warning(f"Line item import failed (non-fatal): {e}", exc_info=True)
+            logger.error("Line item import failed (mandatory stage): %s", e, exc_info=True)
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.LINE_ITEM_IMPORT,
+                    PipelineStageStatus.FAILED,
+                    ordinal=20,
+                    error_code="LINE_ITEM_IMPORT_FAILED",
+                    error_message=str(e),
+                )
+            raise RuntimeError(f"Line item import failed: {e}") from e
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.LINE_ITEM_IMPORT,
+                PipelineStageStatus.SUCCEEDED,
+                ordinal=20,
+            )
         await self.db.refresh(shipment, ["items"])
 
         if settings.SPRINT12_FAST_ANALYSIS_DEV and settings.ENVIRONMENT.lower() in {"development", "dev", "local"}:
@@ -530,6 +665,7 @@ class ShipmentAnalysisService:
                 item_doc_link_map=item_doc_link_map,
                 analysis_id=analysis_id,
                 organization_id=organization_id,
+                stage_ctx=stage_ctx,
             )
             result_json["import_summary"] = import_summary
             logger.info("run_full_shipment_analysis: fast local analysis done for shipment %s", shipment_id)
@@ -543,92 +679,144 @@ class ShipmentAnalysisService:
         psc_results = {}
         enrichment_conflicts = []
 
-        # Process each shipment item
-        for item in shipment.items:
-            item_id = str(item.id)
-            
-            # Classification engine (run for pre-compliance too, even when declared HTS is missing)
+        def _item_description_for_engine(item: ShipmentItem) -> str:
             description = item.label or ""
             if getattr(item, "supplemental_evidence_text", None) and item.supplemental_evidence_text.strip():
-                description = f"{description}\n\nSupplemental evidence:\n{item.supplemental_evidence_text.strip()}"
-            else:
-                ds_text = _get_item_data_sheet_text(
-                    item.label, shipment.documents or [], item.id, item_doc_link_map
-                )
-                if ds_text:
-                    description = f"{description}\n\nData sheet evidence:\n{ds_text}"
-            last_product_analysis: Optional[Dict[str, Any]] = None
-            try:
-                item_responses = (clarification_responses or {}).get(item_id) if clarification_responses else None
-                classification_result = await self.classification_engine.generate_alternatives(
-                    description=description,
-                    country_of_origin=item.country_of_origin,
-                    value=float(item.value) if item.value else None,
-                    quantity=float(item.quantity) if item.quantity else None,
-                    current_hts_code=item.declared_hts,
-                    clarification_responses=item_responses,
-                )
-                rule_input = _build_rule_product_input(item, description)
-                rule_result = self.rule_classifier.classify(rule_input)
-                rule_assessment = {
-                    "heading": rule_result.heading,
-                    "subheading": rule_result.subheading,
-                    "htsus": rule_result.htsus,
-                    "confidence": rule_result.confidence,
-                    "justification": rule_result.justification,
-                    "alternative_headings_considered": rule_result.alternative_headings_considered,
-                    "warnings": rule_result.warnings,
-                    "reasoning_path": rule_result.reasoning_path,
-                }
-                rule_mode = str(getattr(settings, "CLASSIFICATION_RULE_MODE", "enforce")).strip().lower()
-                if rule_mode == "enforce":
-                    classification_result = _apply_rule_based_heading_bias(classification_result, rule_assessment)
-                elif isinstance(classification_result, dict):
-                    # shadow / off keep model ranking intact; shadow still records assessment
-                    if rule_mode == "shadow":
-                        classification_result = dict(classification_result)
-                        classification_result["rule_based_assessment"] = rule_assessment
-                        logger.info(
-                            "classification_rule_shadow item_id=%s heading=%s htsus=%s confidence=%s",
-                            item_id,
-                            rule_result.heading,
-                            rule_result.htsus,
-                            rule_result.confidence,
-                        )
-                classification_results[item_id] = classification_result
-                last_product_analysis = _product_analysis_from_classification_result(classification_result)
-            except Exception as e:
-                logger.error(f"Classification engine error for item {item_id}: {e}")
-                classification_results[item_id] = {"error": str(e)}
-                last_product_analysis = {
-                    "product_family": "unknown",
-                    "extracted_attributes": {},
-                    "missing_required_attributes": [],
-                    "analysis_confidence": 0.2,
-                    "rationale": f"classification_engine_error: {e}",
-                    "family_matched_rule": "",
-                    "family_selection_confidence": 0.0,
-                }
+                return f"{description}\n\nSupplemental evidence:\n{item.supplemental_evidence_text.strip()}"
+            ds_text = _get_item_data_sheet_text(
+                item.label, shipment.documents or [], item.id, item_doc_link_map
+            )
+            if ds_text:
+                return f"{description}\n\nData sheet evidence:\n{ds_text}"
+            return description
 
-            # Patch D: one ShipmentItemClassificationFacts row per (analysis_id, item.id); uq on (analysis_id, shipment_item_id).
-            # Re-running this pipeline with the same analysis_id will duplicate-insert unless rows are cleared first.
-            def _persist_item_classification_facts(pa: Optional[Dict[str, Any]]) -> None:
-                base = dict(pa) if pa else {}
-                if not base.get("product_family"):
-                    base.setdefault("product_family", "unknown")
-                base.setdefault("extracted_attributes", {})
-                base.setdefault("missing_required_attributes", [])
-                base.setdefault("analysis_confidence", base.get("analysis_confidence", 0.0))
-                base.setdefault("rationale", base.get("rationale", ""))
-                fp = build_classification_facts_payload(
-                    product_analysis=base,
-                    shipment_item=item,
-                    description_used=description,
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.CLASSIFICATION,
+                PipelineStageStatus.RUNNING,
+                ordinal=30,
+            )
+
+        async def _phase_classification() -> None:
+            for item in shipment.items:
+                item_id = str(item.id)
+                description = _item_description_for_engine(item)
+                try:
+                    item_responses = (clarification_responses or {}).get(item_id) if clarification_responses else None
+                    classification_result = await self.classification_engine.generate_alternatives(
+                        description=description,
+                        country_of_origin=item.country_of_origin,
+                        value=float(item.value) if item.value else None,
+                        quantity=float(item.quantity) if item.quantity else None,
+                        current_hts_code=item.declared_hts,
+                        clarification_responses=item_responses,
+                    )
+                    rule_input = _build_rule_product_input(item, description)
+                    rule_result = self.rule_classifier.classify(rule_input)
+                    rule_assessment = {
+                        "heading": rule_result.heading,
+                        "subheading": rule_result.subheading,
+                        "htsus": rule_result.htsus,
+                        "confidence": rule_result.confidence,
+                        "justification": rule_result.justification,
+                        "alternative_headings_considered": rule_result.alternative_headings_considered,
+                        "warnings": rule_result.warnings,
+                        "reasoning_path": rule_result.reasoning_path,
+                    }
+                    rule_mode = str(getattr(settings, "CLASSIFICATION_RULE_MODE", "enforce")).strip().lower()
+                    if rule_mode == "enforce":
+                        classification_result = _apply_rule_based_heading_bias(classification_result, rule_assessment)
+                    elif isinstance(classification_result, dict):
+                        if rule_mode == "shadow":
+                            classification_result = dict(classification_result)
+                            classification_result["rule_based_assessment"] = rule_assessment
+                            logger.info(
+                                "classification_rule_shadow item_id=%s heading=%s htsus=%s confidence=%s",
+                                item_id,
+                                rule_result.heading,
+                                rule_result.htsus,
+                                rule_result.confidence,
+                            )
+                    classification_results[item_id] = classification_result
+                except Exception as e:
+                    logger.error(f"Classification engine error for item {item_id}: {e}", exc_info=True)
+                    raise RuntimeError(
+                        f"Classification engine failed for item {item_id}; CLASSIFICATION stage cannot succeed: {e}"
+                    ) from e
+
+                clf_for_check = classification_results.get(item_id)
+                if isinstance(clf_for_check, dict):
+                    meta_chk = clf_for_check.get("metadata") or {}
+                    pa_chk = meta_chk.get("product_analysis") or {}
+                    raw_missing = (
+                        meta_chk.get("missing_required_attributes")
+                        or pa_chk.get("missing_required_attributes")
+                        or []
+                    )
+                    item_responses = (clarification_responses or {}).get(item_id) if clarification_responses else None
+                    critical_missing = _get_critical_missing(raw_missing, description)
+                    if critical_missing and not item_responses:
+                        classification_results[item_id] = {
+                            "status": "CLARIFICATION_REQUIRED",
+                            "questions": [
+                                {"attribute": attr, "question": _question_for(attr)}
+                                for attr in critical_missing
+                            ],
+                            "blocking_reason": f"Cannot classify: missing {', '.join(critical_missing)}",
+                            "original_classification": clf_for_check,
+                        }
+                        duty_results[item_id] = None
+                        psc_results[item_id] = None
+                        continue
+
+        try:
+            await _phase_classification()
+        except Exception as e:
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.CLASSIFICATION,
+                    PipelineStageStatus.FAILED,
+                    ordinal=30,
+                    error_code="CLASSIFICATION_FAILED",
+                    error_message=str(e),
                 )
-                classification_facts_by_item[item_id] = fp
-                if analysis_id:
-                    self.db.add(
-                        ShipmentItemClassificationFacts(
+            raise
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.CLASSIFICATION,
+                PipelineStageStatus.SUCCEEDED,
+                ordinal=30,
+            )
+
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.FACT_PERSIST,
+                PipelineStageStatus.RUNNING,
+                ordinal=31,
+            )
+
+        async def _phase_fact_persist() -> None:
+            for item in shipment.items:
+                item_id = str(item.id)
+                description = _item_description_for_engine(item)
+
+                async def _persist_item_classification_facts(pa: Optional[Dict[str, Any]]) -> None:
+                    base = dict(pa) if pa else {}
+                    if not base.get("product_family"):
+                        base.setdefault("product_family", "unknown")
+                    base.setdefault("extracted_attributes", {})
+                    base.setdefault("missing_required_attributes", [])
+                    base.setdefault("analysis_confidence", base.get("analysis_confidence", 0.0))
+                    base.setdefault("rationale", base.get("rationale", ""))
+                    fp = build_classification_facts_payload(
+                        product_analysis=base,
+                        shipment_item=item,
+                        description_used=description,
+                    )
+                    classification_facts_by_item[item_id] = fp
+                    if analysis_id:
+                        await upsert_shipment_item_classification_facts(
+                            self.db,
                             analysis_id=analysis_id,
                             shipment_id=shipment.id,
                             organization_id=organization_id,
@@ -636,74 +824,92 @@ class ShipmentAnalysisService:
                             facts_json=fp,
                             missing_facts_json=fp.get("missing_facts") or [],
                         )
-                    )
 
-            # Sprint D.3 — missing-facts blocking
-            clf_for_check = classification_results.get(item_id)
-            if isinstance(clf_for_check, dict):
-                meta_chk = clf_for_check.get("metadata") or {}
-                pa_chk = meta_chk.get("product_analysis") or {}
-                raw_missing = (
-                    meta_chk.get("missing_required_attributes")
-                    or pa_chk.get("missing_required_attributes")
-                    or []
+                pa = _product_analysis_for_classification_facts(classification_results.get(item_id))
+                await _persist_item_classification_facts(pa)
+
+        try:
+            await _phase_fact_persist()
+        except Exception as e:
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.FACT_PERSIST,
+                    PipelineStageStatus.FAILED,
+                    ordinal=31,
+                    error_code="FACT_PERSIST_FAILED",
+                    error_message=str(e),
                 )
-                item_responses = (clarification_responses or {}).get(item_id) if clarification_responses else None
-                critical_missing = _get_critical_missing(raw_missing, description)
-                if critical_missing and not item_responses:
-                    classification_results[item_id] = {
-                        "status": "CLARIFICATION_REQUIRED",
-                        "questions": [
-                            {"attribute": attr, "question": _question_for(attr)}
-                            for attr in critical_missing
-                        ],
-                        "blocking_reason": f"Cannot classify: missing {', '.join(critical_missing)}",
-                        "original_classification": clf_for_check,
-                    }
-                    duty_results[item_id] = None
-                    psc_results[item_id] = None
-                    _persist_item_classification_facts(last_product_analysis)
-                    continue
-
-            _persist_item_classification_facts(last_product_analysis)
-
-            # Duty resolver — gated on classification quality (Sprint F.1)
-            item_memo = build_classification_memo(classification_results.get(item_id))
-            hts_for_duty = item.declared_hts or _get_hts_if_supported(
-                classification_results.get(item_id), item_memo,
+            raise
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.FACT_PERSIST,
+                PipelineStageStatus.SUCCEEDED,
+                ordinal=31,
             )
-            if hts_for_duty:
-                try:
-                    resolved_duty = await resolve_duty(
-                        hts_for_duty,
-                        db=self.db,
-                        hts_version_id=AUTHORITATIVE_HTS_VERSION_ID
-                    )
-                    duty_results[item_id] = resolved_duty.to_dict() if resolved_duty else None
-                except Exception as e:
-                    logger.error(f"Duty resolution error for item {item_id}: {e}")
-                    duty_results[item_id] = {"error": str(e)}
-            
-            # PSC Radar (uses the duty-gated HTS — no duty/PSC on weak classification)
-            if hts_for_duty and item.value:
-                try:
-                    psc_result = await self.psc_radar.analyze(
-                        product_description=item.label or "",
-                        declared_hts_code=hts_for_duty,
-                        quantity=float(item.quantity) if item.quantity else 1.0,
-                        customs_value=float(item.value)
-                    )
-                    psc_results[item_id] = {
-                        "alternatives": [alt.__dict__ for alt in psc_result.alternatives],
-                        "flags": [f.value for f in psc_result.flags],
-                        "summary": psc_result.summary
-                    }
-                except Exception as e:
-                    logger.error(f"PSC Radar error for item {item_id}: {e}")
-                    psc_results[item_id] = {"error": str(e)}
 
-        if analysis_id:
-            await self.db.flush()
+        async def _phase_duty_psc() -> None:
+            for item in shipment.items:
+                item_id = str(item.id)
+                item_memo = build_classification_memo(classification_results.get(item_id))
+                hts_for_duty = item.declared_hts or _get_hts_if_supported(
+                    classification_results.get(item_id), item_memo,
+                )
+                if hts_for_duty:
+                    try:
+                        resolved_duty = await resolve_duty(
+                            hts_for_duty,
+                            db=self.db,
+                            hts_version_id=AUTHORITATIVE_HTS_VERSION_ID
+                        )
+                        duty_results[item_id] = resolved_duty.to_dict() if resolved_duty else None
+                    except Exception as e:
+                        logger.error(f"Duty resolution error for item {item_id}: {e}")
+                        duty_results[item_id] = {"error": str(e)}
+
+                if hts_for_duty and item.value:
+                    try:
+                        psc_result = await self.psc_radar.analyze(
+                            product_description=item.label or "",
+                            declared_hts_code=hts_for_duty,
+                            quantity=float(item.quantity) if item.quantity else 1.0,
+                            customs_value=float(item.value)
+                        )
+                        psc_results[item_id] = {
+                            "alternatives": [alt.__dict__ for alt in psc_result.alternatives],
+                            "flags": [f.value for f in psc_result.flags],
+                            "summary": psc_result.summary
+                        }
+                    except Exception as e:
+                        logger.error(f"PSC Radar error for item {item_id}: {e}")
+                        psc_results[item_id] = {"error": str(e)}
+
+            if analysis_id:
+                await self.db.flush()
+
+        await _phase_duty_psc()
+
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.DUTY_PSC_ADVISORY,
+                PipelineStageStatus.RUNNING,
+                ordinal=35,
+            )
+        duty_psc_ok = not any(
+            isinstance(d, dict) and d.get("error")
+            for d in list(duty_results.values()) + list(psc_results.values())
+        )
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.DUTY_PSC_ADVISORY,
+                PipelineStageStatus.SUCCEEDED if duty_psc_ok else PipelineStageStatus.FAILED,
+                ordinal=35,
+                error_code=None if duty_psc_ok else "DUTY_OR_PSC_ITEM_ERROR",
+                error_message=(
+                    None
+                    if duty_psc_ok
+                    else "One or more items have duty or PSC error payloads in JSON (advisory; does not block TRUSTED)"
+                ),
+            )
         
         # Enrichment (check for conflicts)
         # TODO: Integrate enrichment service properly
@@ -711,45 +917,72 @@ class ShipmentAnalysisService:
         # Step 4: Run Side Sprint A regulatory evaluation
         regulatory_evaluations_data = []
         
-        for item in shipment.items:
-            clf = classification_results.get(str(item.id))
-            reg_memo = build_classification_memo(clf)
-            hts_code = item.declared_hts or _get_hts_if_supported(clf, reg_memo)
-            if not hts_code:
-                continue
-            
-            # Prepare document evidence for regulatory evaluation
-            document_evidence = []
-            for doc in shipment.documents:
-                if doc.extracted_text:
-                    document_evidence.append({
-                        "document_id": str(doc.id),
-                        "document_type": doc.document_type.value,
-                        "text": doc.extracted_text,
-                        "structured_data": doc.structured_data
-                    })
-            
-            try:
-                reg_results = await self.regulatory_engine.evaluate_regulatory_applicability(
-                    declared_hts_code=hts_code,
-                    product_description=item.label,
-                    document_evidence=document_evidence
-                )
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.REGULATORY_ENGINE,
+                PipelineStageStatus.RUNNING,
+                ordinal=40,
+            )
+        try:
+            for item in shipment.items:
+                clf = classification_results.get(str(item.id))
+                reg_memo = build_classification_memo(clf)
+                hts_code = item.declared_hts or _get_hts_if_supported(clf, reg_memo)
+                if not hts_code:
+                    continue
                 
-                # Store for later persistence
-                # reg_result is a RegulatoryEvaluationResult dataclass
-                for reg_result in reg_results:
-                    regulatory_evaluations_data.append({
-                        "item_id": str(item.id),
-                        "regulator": reg_result.regulator,  # Regulator enum
-                        "outcome": reg_result.outcome,  # RegulatoryOutcome enum
-                        "explanation_text": reg_result.explanation_text,
-                        "triggered_by_hts_code": reg_result.triggered_by_hts_code,
-                        "condition_evaluations": reg_result.condition_evaluations  # List[ConditionEvaluation] dataclasses
-                    })
-            except Exception as e:
-                logger.error(f"Regulatory evaluation error for item {item.id}: {e}")
-        
+                # Prepare document evidence for regulatory evaluation
+                document_evidence = []
+                for doc in shipment.documents:
+                    if doc.extracted_text:
+                        document_evidence.append({
+                            "document_id": str(doc.id),
+                            "document_type": doc.document_type.value,
+                            "text": doc.extracted_text,
+                            "structured_data": doc.structured_data
+                        })
+                
+                try:
+                    reg_results = await self.regulatory_engine.evaluate_regulatory_applicability(
+                        declared_hts_code=hts_code,
+                        product_description=item.label,
+                        document_evidence=document_evidence
+                    )
+                    
+                    # Store for later persistence
+                    # reg_result is a RegulatoryEvaluationResult dataclass
+                    for reg_result in reg_results:
+                        regulatory_evaluations_data.append({
+                            "item_id": str(item.id),
+                            "regulator": reg_result.regulator,  # Regulator enum
+                            "outcome": reg_result.outcome,  # RegulatoryOutcome enum
+                            "explanation_text": reg_result.explanation_text,
+                            "triggered_by_hts_code": reg_result.triggered_by_hts_code,
+                            "condition_evaluations": reg_result.condition_evaluations  # List[ConditionEvaluation] dataclasses
+                        })
+                except Exception as e:
+                    logger.error(f"Regulatory evaluation error for item {item.id}: {e}", exc_info=True)
+                    raise RuntimeError(
+                        f"Regulatory evaluation failed for item {item.id}; REGULATORY_ENGINE stage cannot succeed: {e}"
+                    ) from e
+
+        except Exception as e:
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.REGULATORY_ENGINE,
+                    PipelineStageStatus.FAILED,
+                    ordinal=40,
+                    error_code="REGULATORY_ENGINE_FAILED",
+                    error_message=str(e),
+                )
+            raise
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.REGULATORY_ENGINE,
+                PipelineStageStatus.SUCCEEDED,
+                ordinal=40,
+            )
+
         # Step 5: review_snapshot is built later as deepcopy(result_json)
         # Capture metadata that will be merged into the snapshot after result_json is built
         _snapshot_meta = {
@@ -801,10 +1034,11 @@ class ShipmentAnalysisService:
                     "message": f"Duty resolution error for item {item_id}: {result['error']}"
                 })
         
-        # Knowledge layer — lookup prior accepted classifications (suggestions only)
+        # Knowledge layer — lookup prior accepted classifications (suggestions only; non-authoritative)
         from app.services.product_knowledge_service import ProductKnowledgeService
         knowledge_svc = ProductKnowledgeService(self.db)
         prior_knowledge: Dict[str, Optional[Dict[str, Any]]] = {}
+        prior_knowledge_lookup_errors: List[Dict[str, Any]] = []
         for item in shipment.items or []:
             try:
                 pk = await knowledge_svc.lookup(
@@ -812,8 +1046,16 @@ class ShipmentAnalysisService:
                 )
                 if pk:
                     prior_knowledge[str(item.id)] = pk
-            except Exception:
-                pass
+            except Exception as ex:
+                logger.warning(
+                    "Product knowledge lookup failed item_id=%s: %s",
+                    item.id,
+                    ex,
+                    exc_info=True,
+                )
+                prior_knowledge_lookup_errors.append(
+                    {"item_id": str(item.id), "error": str(ex)}
+                )
 
         line_provenance_map: Dict[str, List[ShipmentItemLineProvenance]] = {}
         if shipment.items:
@@ -911,6 +1153,8 @@ class ShipmentAnalysisService:
             "review_status": review_status.value,
             "generated_at": datetime.utcnow().isoformat(),
             "import_summary": import_summary,
+            "regulatory_evaluations": regulatory_evaluations_data,
+            "prior_knowledge_lookup_errors": prior_knowledge_lookup_errors,
         }
         if not shipment.items and shipment.documents:
             files_not_found = evidence_map.get("files_not_found") or any(
@@ -918,6 +1162,14 @@ class ShipmentAnalysisService:
                 for w in evidence_map.get("warnings", [])
             )
             result_json["no_items_hint"] = "files_not_found" if files_not_found else "extraction_returned_no_lines"
+
+        await self._persist_reasoning_traces_phase2(
+            analysis_id=analysis_id,
+            organization_id=organization_id,
+            shipment_id=shipment_id,
+            result_json=result_json,
+            stage_ctx=stage_ctx,
+        )
 
         import copy
         review_snapshot = copy.deepcopy(result_json)
@@ -1070,6 +1322,7 @@ class ShipmentAnalysisService:
         item_doc_link_map: Optional[Dict[str, List[UUID]]] = None,
         analysis_id: Optional[UUID] = None,
         organization_id: Optional[UUID] = None,
+        stage_ctx: Optional[PipelineStageContext] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any], List[str]]:
         """
         Build a deterministic lightweight analysis result in local/dev mode.
@@ -1119,78 +1372,106 @@ class ShipmentAnalysisService:
                 line_provenance_map_fast.setdefault(str(_pf.shipment_item_id), []).append(_pf)
 
         items_payload: List[Dict[str, Any]] = []
-        for idx, item in enumerate(shipment.items or []):
-            line_idx = idx + 1
-            duty_from_es = es_duty_by_line.get(line_idx) or es_duty_by_line.get(idx + 1)
-            duty_amount = (duty_from_es or {}).get("amount") or 0
-            sec301 = (duty_from_es or {}).get("section_301_amount")
-            item_id = str(item.id)
+        psc_fast_failed = False
 
-            # Keep fast-local mode useful for pre-compliance by still generating likely HS suggestions.
+        def _fast_item_description(item: ShipmentItem) -> str:
             description = item.label or ""
             if getattr(item, "supplemental_evidence_text", None) and item.supplemental_evidence_text.strip():
-                description = f"{description}\n\nSupplemental evidence:\n{item.supplemental_evidence_text.strip()}"
-            else:
-                ds_text = _get_item_data_sheet_text(
-                    item.label,
-                    shipment.documents or [],
-                    item.id,
-                    item_doc_link_map or {},
-                )
-                if ds_text:
-                    description = f"{description}\n\nData sheet evidence:\n{ds_text}"
-            try:
-                classification_result = await self.classification_engine.generate_alternatives(
-                    description=description,
-                    country_of_origin=item.country_of_origin,
-                    value=float(item.value) if item.value else None,
-                    quantity=float(item.quantity) if item.quantity else None,
-                    current_hts_code=item.declared_hts,
-                    clarification_responses=None,
-                )
-                rule_input = _build_rule_product_input(item, description)
-                rule_result = self.rule_classifier.classify(rule_input)
-                rule_assessment = {
-                    "heading": rule_result.heading,
-                    "subheading": rule_result.subheading,
-                    "htsus": rule_result.htsus,
-                    "confidence": rule_result.confidence,
-                    "justification": rule_result.justification,
-                    "alternative_headings_considered": rule_result.alternative_headings_considered,
-                    "warnings": rule_result.warnings,
-                    "reasoning_path": rule_result.reasoning_path,
-                }
-                rule_mode = str(getattr(settings, "CLASSIFICATION_RULE_MODE", "enforce")).strip().lower()
-                if rule_mode == "enforce":
-                    classification_result = _apply_rule_based_heading_bias(classification_result, rule_assessment)
-                elif isinstance(classification_result, dict):
-                    if rule_mode == "shadow":
-                        classification_result = dict(classification_result)
-                        classification_result["rule_based_assessment"] = rule_assessment
-                        logger.info(
-                            "classification_rule_shadow item_id=%s heading=%s htsus=%s confidence=%s",
-                            item_id,
-                            rule_result.heading,
-                            rule_result.htsus,
-                            rule_result.confidence,
-                        )
-                classification_results[item_id] = classification_result
-                last_product_analysis = _product_analysis_from_classification_result(classification_result)
-            except Exception as e:
-                logger.warning(f"Classification engine error in fast path for item {item.id}: {e}")
-                classification_results[item_id] = {"error": str(e)}
-                last_product_analysis = {
-                    "product_family": "unknown",
-                    "extracted_attributes": {},
-                    "missing_required_attributes": [],
-                    "analysis_confidence": 0.2,
-                    "rationale": f"classification_engine_error: {e}",
-                    "family_matched_rule": "",
-                    "family_selection_confidence": 0.0,
-                }
+                return f"{description}\n\nSupplemental evidence:\n{item.supplemental_evidence_text.strip()}"
+            ds_text = _get_item_data_sheet_text(
+                item.label,
+                shipment.documents or [],
+                item.id,
+                item_doc_link_map or {},
+            )
+            if ds_text:
+                return f"{description}\n\nData sheet evidence:\n{ds_text}"
+            return description
 
-            # Patch D: same uniqueness contract as full path (one facts row per analysis_id + item).
-            def _persist_fast_classification_facts(pa: Optional[Dict[str, Any]]) -> None:
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.CLASSIFICATION,
+                PipelineStageStatus.RUNNING,
+                ordinal=30,
+            )
+
+        async def _phase_fast_classification() -> None:
+            for item in shipment.items or []:
+                item_id = str(item.id)
+                description = _fast_item_description(item)
+                try:
+                    classification_result = await self.classification_engine.generate_alternatives(
+                        description=description,
+                        country_of_origin=item.country_of_origin,
+                        value=float(item.value) if item.value else None,
+                        quantity=float(item.quantity) if item.quantity else None,
+                        current_hts_code=item.declared_hts,
+                        clarification_responses=None,
+                    )
+                    rule_input = _build_rule_product_input(item, description)
+                    rule_result = self.rule_classifier.classify(rule_input)
+                    rule_assessment = {
+                        "heading": rule_result.heading,
+                        "subheading": rule_result.subheading,
+                        "htsus": rule_result.htsus,
+                        "confidence": rule_result.confidence,
+                        "justification": rule_result.justification,
+                        "alternative_headings_considered": rule_result.alternative_headings_considered,
+                        "warnings": rule_result.warnings,
+                        "reasoning_path": rule_result.reasoning_path,
+                    }
+                    rule_mode = str(getattr(settings, "CLASSIFICATION_RULE_MODE", "enforce")).strip().lower()
+                    if rule_mode == "enforce":
+                        classification_result = _apply_rule_based_heading_bias(classification_result, rule_assessment)
+                    elif isinstance(classification_result, dict):
+                        if rule_mode == "shadow":
+                            classification_result = dict(classification_result)
+                            classification_result["rule_based_assessment"] = rule_assessment
+                            logger.info(
+                                "classification_rule_shadow item_id=%s heading=%s htsus=%s confidence=%s",
+                                item_id,
+                                rule_result.heading,
+                                rule_result.htsus,
+                                rule_result.confidence,
+                            )
+                    classification_results[item_id] = classification_result
+                except Exception as e:
+                    logger.error(f"Classification engine error in fast path for item {item.id}: {e}", exc_info=True)
+                    raise RuntimeError(
+                        f"Classification engine failed for item {item_id}; CLASSIFICATION stage cannot succeed: {e}"
+                    ) from e
+
+        try:
+            await _phase_fast_classification()
+        except Exception as e:
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.CLASSIFICATION,
+                    PipelineStageStatus.FAILED,
+                    ordinal=30,
+                    error_code="CLASSIFICATION_FAILED",
+                    error_message=str(e),
+                )
+            raise
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.CLASSIFICATION,
+                PipelineStageStatus.SUCCEEDED,
+                ordinal=30,
+            )
+
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.FACT_PERSIST,
+                PipelineStageStatus.RUNNING,
+                ordinal=31,
+            )
+
+        async def _phase_fast_fact_persist() -> None:
+            for item in shipment.items or []:
+                item_id = str(item.id)
+                description = _fast_item_description(item)
+                pa = _product_analysis_for_classification_facts(classification_results.get(item_id))
                 base = dict(pa) if pa else {}
                 if not base.get("product_family"):
                     base.setdefault("product_family", "unknown")
@@ -1205,92 +1486,148 @@ class ShipmentAnalysisService:
                 )
                 classification_facts_by_item[item_id] = fp
                 if analysis_id:
-                    self.db.add(
-                        ShipmentItemClassificationFacts(
-                            analysis_id=analysis_id,
-                            shipment_id=shipment_id,
-                            organization_id=organization_id,
-                            shipment_item_id=item.id,
-                            facts_json=fp,
-                            missing_facts_json=fp.get("missing_facts") or [],
-                        )
+                    await upsert_shipment_item_classification_facts(
+                        self.db,
+                        analysis_id=analysis_id,
+                        shipment_id=shipment_id,
+                        organization_id=organization_id,
+                        shipment_item_id=item.id,
+                        facts_json=fp,
+                        missing_facts_json=fp.get("missing_facts") or [],
                     )
 
-            _persist_fast_classification_facts(last_product_analysis)
-
-            fast_clf = classification_results.get(item_id)
-            fast_memo = build_classification_memo(fast_clf)
-            fast_suppress = bool(fast_memo.get("suppress_alternatives"))
-            fast_support_level = fast_memo.get("support_level", "unknown") if fast_memo else "unknown"
-            fast_ev = _build_item_evidence_used(
-                item.label, shipment.documents or [], item.id, item_doc_link_map or {},
+        try:
+            await _phase_fast_fact_persist()
+        except Exception as e:
+            if stage_ctx:
+                await stage_ctx.mark(
+                    PipelineStageName.FACT_PERSIST,
+                    PipelineStageStatus.FAILED,
+                    ordinal=31,
+                    error_code="FACT_PERSIST_FAILED",
+                    error_message=str(e),
+                )
+            raise
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.FACT_PERSIST,
+                PipelineStageStatus.SUCCEEDED,
+                ordinal=31,
             )
-            fast_lp = self._line_provenance_api_rows(
-                line_provenance_map_fast.get(item_id, []),
-                shipment.documents or [],
-            )
-            item_dict: Dict[str, Any] = {
-                "id": str(item.id),
-                "label": item.label,
-                "hts_code": item.declared_hts or _get_hts_if_supported(fast_clf, fast_memo),
-                "classification": None if fast_suppress else fast_clf,
-                "classification_memo": fast_memo,
-                "classification_outcome": stable_classification_outcome(fast_support_level),
-                "duty": None,
-                "psc": None,
-                "regulatory": [],
-                "supplemental_evidence_source": getattr(item, "supplemental_evidence_source", None),
-                "needs_supplemental_evidence": _item_needs_supplemental(fast_clf),
-                "suppress_alternatives": fast_suppress,
-                "evidence_used": fast_ev,
-                "line_provenance": fast_lp,
-                "classification_facts": classification_facts_by_item.get(item_id),
-                "heading_reasoning_trace": build_heading_reasoning_trace(
-                    None if fast_suppress else fast_clf,
-                    evidence_used=fast_ev,
-                    line_provenance=fast_lp,
-                ),
-            }
-            if duty_from_es:
-                item_dict["duty_from_entry_summary"] = {
-                    "amount": duty_amount,
-                    "section_301_amount": sec301,
-                }
 
-            origin_mismatch_for_line = next((m for m in origin_mismatches if m.get("line_number") == line_idx), None)
-            if origin_mismatch_for_line:
-                item_dict["origin_mismatch"] = {
-                    "ci_country": origin_mismatch_for_line["ci_country"],
-                    "es_country": origin_mismatch_for_line["es_country"],
-                    "duty_paid": origin_mismatch_for_line.get("duty_paid"),
-                }
+        async def _phase_fast_build_payload() -> None:
+            nonlocal psc_fast_failed
+            for idx, item in enumerate(shipment.items or []):
+                line_idx = idx + 1
+                duty_from_es = es_duty_by_line.get(line_idx) or es_duty_by_line.get(idx + 1)
+                duty_amount = (duty_from_es or {}).get("amount") or 0
+                sec301 = (duty_from_es or {}).get("section_301_amount")
+                item_id = str(item.id)
 
-            psc_threshold = getattr(settings, "PSC_DUTY_THRESHOLD", 1000.0)
-            if duty_amount > psc_threshold and item.declared_hts and item.value:
-                try:
-                    psc_result = await self.psc_radar.analyze(
-                        product_description=item.label or "",
-                        declared_hts_code=item.declared_hts,
-                        quantity=float(item.quantity) if item.quantity else 1.0,
-                        customs_value=float(item.value),
-                        country_of_origin=item.country_of_origin,
-                    )
-                    item_dict["psc"] = {
-                        "alternatives": [{"alternative_hts_code": a.alternative_hts_code, "alternative_duty_rate": a.alternative_duty_rate, "delta_amount": a.delta_amount, "delta_percent": a.delta_percent} for a in psc_result.alternatives],
-                        "summary": psc_result.summary,
+                fast_clf = classification_results.get(item_id)
+                fast_memo = build_classification_memo(fast_clf)
+                fast_suppress = bool(fast_memo.get("suppress_alternatives"))
+                fast_support_level = fast_memo.get("support_level", "unknown") if fast_memo else "unknown"
+                fast_ev = _build_item_evidence_used(
+                    item.label, shipment.documents or [], item.id, item_doc_link_map or {},
+                )
+                fast_lp = self._line_provenance_api_rows(
+                    line_provenance_map_fast.get(item_id, []),
+                    shipment.documents or [],
+                )
+                item_dict: Dict[str, Any] = {
+                    "id": str(item.id),
+                    "label": item.label,
+                    "hts_code": item.declared_hts or _get_hts_if_supported(fast_clf, fast_memo),
+                    "classification": None if fast_suppress else fast_clf,
+                    "classification_memo": fast_memo,
+                    "classification_outcome": stable_classification_outcome(fast_support_level),
+                    "duty": None,
+                    "psc": None,
+                    "regulatory": [],
+                    "supplemental_evidence_source": getattr(item, "supplemental_evidence_source", None),
+                    "needs_supplemental_evidence": _item_needs_supplemental(fast_clf),
+                    "suppress_alternatives": fast_suppress,
+                    "evidence_used": fast_ev,
+                    "line_provenance": fast_lp,
+                    "classification_facts": classification_facts_by_item.get(item_id),
+                    "heading_reasoning_trace": build_heading_reasoning_trace(
+                        None if fast_suppress else fast_clf,
+                        evidence_used=fast_ev,
+                        line_provenance=fast_lp,
+                    ),
+                }
+                if duty_from_es:
+                    item_dict["duty_from_entry_summary"] = {
+                        "amount": duty_amount,
+                        "section_301_amount": sec301,
                     }
-                    if psc_result.alternatives or origin_mismatch_for_line:
-                        item_dict["clarification_questions"] = [
-                            {"attribute": "country_of_origin", "question": "Where was this product manufactured or assembled? Country of origin affects duty rates."},
-                            {"attribute": "product_details", "question": "Can you confirm motor wattage, battery capacity, or other specs that may affect HTS classification?"},
-                        ]
-                except Exception as e:
-                    logger.warning(f"PSC Radar error in fast path for item {item.id}: {e}")
+            
+                origin_mismatch_for_line = next((m for m in origin_mismatches if m.get("line_number") == line_idx), None)
+                if origin_mismatch_for_line:
+                    item_dict["origin_mismatch"] = {
+                        "ci_country": origin_mismatch_for_line["ci_country"],
+                        "es_country": origin_mismatch_for_line["es_country"],
+                        "duty_paid": origin_mismatch_for_line.get("duty_paid"),
+                    }
+            
+                psc_threshold = getattr(settings, "PSC_DUTY_THRESHOLD", 1000.0)
+                if duty_amount > psc_threshold and item.declared_hts and item.value:
+                    try:
+                        psc_result = await self.psc_radar.analyze(
+                            product_description=item.label or "",
+                            declared_hts_code=item.declared_hts,
+                            quantity=float(item.quantity) if item.quantity else 1.0,
+                            customs_value=float(item.value),
+                            country_of_origin=item.country_of_origin,
+                        )
+                        item_dict["psc"] = {
+                            "alternatives": [{"alternative_hts_code": a.alternative_hts_code, "alternative_duty_rate": a.alternative_duty_rate, "delta_amount": a.delta_amount, "delta_percent": a.delta_percent} for a in psc_result.alternatives],
+                            "summary": psc_result.summary,
+                        }
+                        if psc_result.alternatives or origin_mismatch_for_line:
+                            item_dict["clarification_questions"] = [
+                                {"attribute": "country_of_origin", "question": "Where was this product manufactured or assembled? Country of origin affects duty rates."},
+                                {"attribute": "product_details", "question": "Can you confirm motor wattage, battery capacity, or other specs that may affect HTS classification?"},
+                            ]
+                    except Exception as e:
+                        psc_fast_failed = True
+                        logger.warning(f"PSC Radar error in fast path for item {item.id}: {e}")
+            
+                items_payload.append(item_dict)
+            
+            if analysis_id:
+                await self.db.flush()
 
-            items_payload.append(item_dict)
+        await _phase_fast_build_payload()
 
-        if analysis_id:
-            await self.db.flush()
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.DUTY_PSC_ADVISORY,
+                PipelineStageStatus.RUNNING,
+                ordinal=35,
+            )
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.DUTY_PSC_ADVISORY,
+                PipelineStageStatus.SUCCEEDED if not psc_fast_failed else PipelineStageStatus.FAILED,
+                ordinal=35,
+                error_code=None if not psc_fast_failed else "PSC_FAST_PATH_ERROR",
+                error_message=None if not psc_fast_failed else "PSC Radar raised in fast local path (advisory)",
+            )
+
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.REGULATORY_ENGINE,
+                PipelineStageStatus.RUNNING,
+                ordinal=40,
+            )
+        if stage_ctx:
+            await stage_ctx.mark(
+                PipelineStageName.REGULATORY_ENGINE,
+                PipelineStageStatus.SUCCEEDED,
+                ordinal=40,
+            )
 
         for m in origin_mismatches:
             ci_name = coo_country_names.get(m["ci_country"], m["ci_country"])
@@ -1318,6 +1655,8 @@ class ShipmentAnalysisService:
             "review_status": ReviewStatus.DRAFT.value,
             "generated_at": datetime.utcnow().isoformat(),
             "mode": "FAST_LOCAL_DEV",
+            "regulatory_evaluations": regulatory_evaluations_data,
+            "prior_knowledge_lookup_errors": [],
         }
         if coo_confirmation_prompt:
             result_json["coo_confirmation_prompt"] = coo_confirmation_prompt
@@ -1325,6 +1664,14 @@ class ShipmentAnalysisService:
             result_json["origin_mismatches"] = origin_mismatches
         if no_items_hint:
             result_json["no_items_hint"] = no_items_hint
+
+        await self._persist_reasoning_traces_phase2(
+            analysis_id=analysis_id,
+            organization_id=organization_id,
+            shipment_id=shipment_id,
+            result_json=result_json,
+            stage_ctx=stage_ctx,
+        )
 
         import copy
         review_snapshot = copy.deepcopy(result_json)

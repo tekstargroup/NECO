@@ -122,9 +122,22 @@ class ShipmentItem(Base):
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
+    # Phase 1 — which analysis run is authoritative for this line (promoted explicitly)
+    active_analysis_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("analyses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Relationships
     shipment = relationship("Shipment", back_populates="items")
+    active_analysis = relationship(
+        "Analysis",
+        foreign_keys=[active_analysis_id],
+        back_populates="active_for_shipment_items",
+    )
     document_links = relationship(
         "ShipmentItemDocument",
         back_populates="item",

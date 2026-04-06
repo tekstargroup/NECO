@@ -3,7 +3,9 @@ Export Service - Sprint 12
 
 Generates export artifacts from ReviewRecord snapshots.
 Non-negotiable rules:
-- Exports consume ReviewRecord only (no recomputation)
+- Regulatory rows are loaded by ``regulatory_evaluations.analysis_id`` when the review is analysis-linked
+  (Phase 2b); ``review_id`` is a legacy fallback only.
+- Snapshot JSON is the materialized review view; regulatory detail is reconciled from DB for audit packs.
 - Blockers enforced before generation
 - Evidence integrity required
 """
@@ -29,9 +31,25 @@ from app.models.export import Export, ExportType, ExportStatus
 from app.models.shipment import Shipment
 from app.services.s3_upload_service import get_s3_client
 from app.services.classification_memo import stable_classification_outcome
+from app.services.trust_contract_consumer import export_supplement_from_snapshot
+from app.services.regulatory_evaluation_service import regulatory_select_for_review
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+async def _load_regulatory_evaluations_for_review(
+    db: AsyncSession,
+    review: ReviewRecord,
+    *,
+    with_conditions: bool = False,
+) -> List[RegulatoryEvaluation]:
+    """Prefer analysis_id (Phase 2b); fall back to review_id for legacy rows."""
+    stmt = regulatory_select_for_review(review)
+    if with_conditions:
+        stmt = stmt.options(selectinload(RegulatoryEvaluation.conditions))
+    res = await db.execute(stmt)
+    return list(res.scalars().all())
 
 
 class ExportService:
@@ -231,11 +249,7 @@ class ExportService:
             blockers.append("Review status is REVIEW_REQUIRED - review must be completed before export")
         
         # Check regulatory outcomes
-        reg_eval_result = await self.db.execute(
-            select(RegulatoryEvaluation)
-            .where(RegulatoryEvaluation.review_id == review.id)
-        )
-        reg_evals = reg_eval_result.scalars().all()
+        reg_evals = await _load_regulatory_evaluations_for_review(self.db, review, with_conditions=False)
         
         for reg_eval in reg_evals:
             if reg_eval.outcome == RegulatoryOutcome.CONDITIONAL:
@@ -283,13 +297,10 @@ class ExportService:
         """Build JSON export for audit pack."""
         snapshot = review.object_snapshot.copy()
         
-        # Load regulatory evaluations
-        reg_eval_result = await self.db.execute(
-            select(RegulatoryEvaluation)
-            .where(RegulatoryEvaluation.review_id == review.id)
-            .options(selectinload(RegulatoryEvaluation.conditions))
+        # Load regulatory evaluations (analysis-scoped when available)
+        reg_evals = await _load_regulatory_evaluations_for_review(
+            self.db, review, with_conditions=True
         )
-        reg_evals = reg_eval_result.scalars().all()
         
         # Add regulatory evaluations to JSON
         reg_evals_data = []
@@ -303,14 +314,17 @@ class ExportService:
                 }
                 for cond in reg_eval.conditions
             ]
-            reg_evals_data.append({
+            row = {
                 "id": str(reg_eval.id),
                 "regulator": reg_eval.regulator.value if hasattr(reg_eval.regulator, "value") else str(reg_eval.regulator),
                 "outcome": reg_eval.outcome.value if hasattr(reg_eval.outcome, "value") else str(reg_eval.outcome),
                 "explanation_text": reg_eval.explanation_text,
                 "triggered_by_hts_code": reg_eval.triggered_by_hts_code,
-                "condition_evaluations": conditions_data
-            })
+                "condition_evaluations": conditions_data,
+            }
+            if getattr(reg_eval, "shipment_item_id", None):
+                row["item_id"] = str(reg_eval.shipment_item_id)
+            reg_evals_data.append(row)
         
         items_trust = []
         for it in snapshot.get("items") or []:
@@ -337,6 +351,7 @@ class ExportService:
             "hts_version_id": review.hts_version_id,
             "review_status": review.status.value if hasattr(review.status, "value") else str(review.status),
             "analysis_provenance": snapshot.get("analysis_provenance") or snapshot.get("provenance"),
+            **export_supplement_from_snapshot(snapshot),
             "export_provenance": {
                 "neco_version": getattr(settings, "APP_VERSION", "unknown"),
                 "exported_at": datetime.utcnow().isoformat(),
@@ -359,11 +374,7 @@ class ExportService:
         snapshot = review.object_snapshot
         
         # Load regulatory evaluations summary
-        reg_eval_result = await self.db.execute(
-            select(RegulatoryEvaluation)
-            .where(RegulatoryEvaluation.review_id == review.id)
-        )
-        reg_evals = reg_eval_result.scalars().all()
+        reg_evals = await _load_regulatory_evaluations_for_review(self.db, review, with_conditions=False)
         
         reg_summary = []
         for reg_eval in reg_evals:
@@ -396,6 +407,7 @@ class ExportService:
             "review_id": str(review.id),
             "hts_version_id": review.hts_version_id,
             "analysis_provenance": snapshot.get("analysis_provenance") or snapshot.get("provenance"),
+            **export_supplement_from_snapshot(snapshot if isinstance(snapshot, dict) else {}),
             "export_provenance": {
                 "neco_version": getattr(settings, "APP_VERSION", "unknown"),
                 "exported_at": datetime.utcnow().isoformat(),

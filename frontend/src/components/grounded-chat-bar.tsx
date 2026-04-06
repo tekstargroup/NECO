@@ -75,7 +75,8 @@ export function GroundedChatBar({
         <CardTitle className="text-base">Grounded classification Q&A</CardTitle>
         <p className="text-sm text-muted-foreground">
           Answers use only facts, trace, evidence, and classification stored in this run. If it is not in that
-          evidence, the reply says so (cite-or-refuse).
+          evidence, the reply says so (cite-or-refuse). Even when the run is marked Trusted, duty and PSC fields are
+          advisory for Phase 1 — do not treat them as filing authority without separate validation.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">

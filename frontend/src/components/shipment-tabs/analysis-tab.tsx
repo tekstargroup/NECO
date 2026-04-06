@@ -392,6 +392,14 @@ export function AnalysisTab({ shipment, shipmentId, autoStartAnalysis, onAutoSta
             </div>
           </CardHeader>
           <CardContent>
+            {analysisStatus?.status === "COMPLETE" && analysisStatus?.decision_status === "TRUSTED" && (
+              <p className="mb-4 text-xs text-muted-foreground border-l-2 border-muted pl-3">
+                <strong className="text-foreground">Trusted run (Phase 1 scope):</strong> covers classification, persisted
+                facts, regulatory evaluation, and review snapshot persistence. Duty, PSC, product-knowledge hints, and
+                reasoning trace in the JSON are advisory unless separately promoted — see{" "}
+                <code className="text-xs">result_json.trust_contract</code> from the API.
+              </p>
+            )}
             {/* Extraction preview: only before first analysis or when re-running */}
             {analysisStatus?.status !== "COMPLETE" && (shipment?.documents?.length ?? 0) > 0 && (
               <div className="mb-4 flex items-center gap-2">
@@ -1513,6 +1521,10 @@ function AnalysisResultsView({
               </ul>
             </details>
           )}
+          <p className="mt-2 text-[11px] text-muted-foreground border-t border-blue-200/80 pt-2">
+            Line-to-document provenance is supporting context under Phase 1, not a standalone guarantee of
+            evidence completeness (see API <code className="text-[10px]">trust_contract</code>).
+          </p>
         </div>
       )}
 

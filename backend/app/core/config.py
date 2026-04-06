@@ -53,7 +53,16 @@ class Settings(BaseSettings):
     # PATCH C: Central family router for critical clarification attributes (replaces inline heuristics only when True).
     CLASSIFICATION_FAMILY_ROUTER_ENABLED: bool = False
     CLASSIFICATION_FAMILY_ROUTER_VERSION: str = "1"
-    
+
+    # Phase 1 — promotion gating (surfaces authoritative analysis). DEGRADED is never auto-promoted
+    # unless ANALYSIS_ALLOW_DEGRADED_PROMOTION=true in explicit local dev — avoids staging/prod ambiguity.
+    # Default True: completed runs that need review still become the active snapshot (review layers on top).
+    ANALYSIS_PROMOTE_REVIEW_REQUIRED: bool = True
+    ANALYSIS_ALLOW_DEGRADED_PROMOTION: bool = False  # If True + local dev only, DEGRADED (e.g. INSTANT_DEV) may promote
+
+    # Phase 2 — when True, TRUSTED requires REASONING_TRACE_PERSIST SUCCEEDED (after backfill/migration 023).
+    PHASE2_REASONING_TRACE_TRUSTED_REQUIRED: bool = False
+
     # Anthropic API
     ANTHROPIC_API_KEY: str
 
